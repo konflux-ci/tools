@@ -1,3 +1,5 @@
+FROM quay.io/konflux-ci/buildah-task:latest@sha256:b82d465a06c926882d02b721cf8a8476048711332749f39926a01089cf85a3f9 AS buildah-task-image
+
 FROM registry.access.redhat.com/ubi9/python-311:9.6-1747333117
 
 LABEL \
@@ -23,6 +25,7 @@ RUN curl -L https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 
 RUN wget https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64.tar.gz -O - |\
     tar xz && mv yq_linux_amd64 /usr/bin/yq
 COPY data/kerberos/krb5.conf /etc
+COPY --from=buildah-task-image /usr/bin/retry /usr/bin/
 
 USER 1001
 
