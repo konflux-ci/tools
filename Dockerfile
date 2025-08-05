@@ -1,6 +1,6 @@
 FROM quay.io/konflux-ci/buildah-task:latest@sha256:121ccc64ade7c25fa85e9476d6a318d0020afb159cfc0217c082c04261b3bfdf AS buildah-task-image
 
-FROM registry.access.redhat.com/ubi9/python-311:9.6-1753967630
+FROM registry.access.redhat.com/ubi9/python-311:9.6-1754318683
 
 LABEL \
     description="Tools for Red Hat AppStudio" \
