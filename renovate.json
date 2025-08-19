@@ -1,6 +1,101 @@
 {
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "updateNotScheduled": false,
   "schedule": [
     "after 5pm on sunday"
-  ]
+  ],
+  "automergeStrategy": "merge-commit",
+  "platformAutomerge": true,
+  "packageRules": [
+    {
+      "description": "Auto-merge patch updates for Konflux components",
+      "matchUpdateTypes": ["patch", "digest"],
+      "matchPackagePatterns": ["^quay.io/konflux-ci/"],
+      "automerge": true,
+      "autoApprove": true
+    },
+    {
+      "description": "Group Tekton bundle updates together",
+      "groupName": "tekton-bundles",
+      "matchPackagePatterns": ["quay.io/konflux-ci/tekton-catalog/"],
+      "automerge": true,
+      "autoApprove": true
+    },
+    {
+      "description": "Group Python development tools",
+      "groupName": "python-dev-tools",
+      "matchPackageNames": [
+        "black",
+        "mypy", 
+        "pylint",
+        "isort",
+        "pytest",
+        "pylint-pytest",
+        "types-pyyaml",
+        "types-requests"
+      ],
+      "matchDatasources": ["pypi"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true,
+      "autoApprove": true
+    },
+    {
+      "description": "Group Python core dependencies for manual review",
+      "groupName": "python-core-deps",
+      "matchPackageNames": [
+        "click",
+        "requests", 
+        "pyyaml",
+        "kubernetes",
+        "odcs",
+        "authlib"
+      ],
+      "matchDatasources": ["pypi"],
+      "automerge": false,
+      "autoApprove": false
+    },
+    {
+      "description": "Auto-merge GitHub Actions patch updates",
+      "matchDatasources": ["github-actions"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true,
+      "autoApprove": true
+    },
+    {
+      "description": "Group GitHub Actions minor/major updates",
+      "groupName": "github-actions",
+      "matchDatasources": ["github-actions"],
+      "matchUpdateTypes": ["minor", "major"],
+      "automerge": false,
+      "autoApprove": false
+    },
+    {
+      "description": "Auto-merge container base image digest updates",
+      "matchUpdateTypes": ["digest"],
+      "matchPackagePatterns": [
+        "^quay.io/konflux-ci/buildah-task",
+        "^registry.access.redhat.com/ubi9/"
+      ],
+      "automerge": true,
+      "autoApprove": true
+    },
+    {
+      "description": "Group Python version updates for manual review", 
+      "groupName": "python-version",
+      "matchDatasources": ["python-version"],
+      "automerge": false,
+      "autoApprove": false
+    },
+    {
+      "description": "Group Docker base image updates",
+      "groupName": "docker-base-images",
+      "matchUpdateTypes": ["minor", "major"],
+      "matchPackagePatterns": [
+        "^quay.io/konflux-ci/"
+      ],
+      "automerge": false,
+      "autoApprove": false
+    }
+  ],
+  "prConcurrentLimit": 0
 }
