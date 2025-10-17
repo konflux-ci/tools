@@ -560,75 +560,75 @@
         },
         "opentelemetry-api": {
             "hashes": [
-                "sha256:540735b120355bd5112738ea53621f8d5edb35ebcd6fe21ada3ab1c61d1cd9a7",
-                "sha256:accf2024d3e89faec14302213bc39550ec0f4095d1cf5ca688e1bfb1c8612f47"
+                "sha256:2891b0197f47124454ab9f0cf58f3be33faca394457ac3e09daba13ff50aa582",
+                "sha256:f4c193b5e8acb0912b06ac5b16321908dd0843d75049c091487322284a3eea12"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.37.0"
+            "version": "==1.38.0"
         },
         "opentelemetry-exporter-otlp-proto-common": {
             "hashes": [
-                "sha256:53038428449c559b0c564b8d718df3314da387109c4d36bd1b94c9a641b0292e",
-                "sha256:c87a1bdd9f41fdc408d9cc9367bb53f8d2602829659f2b90be9f9d79d0bfe62c"
+                "sha256:03cb76ab213300fe4f4c62b7d8f17d97fcfd21b89f0b5ce38ea156327ddda74a",
+                "sha256:e333278afab4695aa8114eeb7bf4e44e65c6607d54968271a249c180b2cb605c"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.37.0"
+            "version": "==1.38.0"
         },
         "opentelemetry-exporter-otlp-proto-http": {
             "hashes": [
-                "sha256:54c42b39945a6cc9d9a2a33decb876eabb9547e0dcb49df090122773447f1aef",
-                "sha256:e52e8600f1720d6de298419a802108a8f5afa63c96809ff83becb03f874e44ac"
+                "sha256:84b937305edfc563f08ec69b9cb2298be8188371217e867c1854d77198d0825b",
+                "sha256:f16bd44baf15cbe07633c5112ffc68229d0edbeac7b37610be0b2def4e21e90b"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.37.0"
+            "version": "==1.38.0"
         },
         "opentelemetry-instrumentation": {
             "hashes": [
-                "sha256:50f97ac03100676c9f7fc28197f8240c7290ca1baa12da8bfbb9a1de4f34cc45",
-                "sha256:df640f3ac715a3e05af145c18f527f4422c6ab6c467e40bd24d2ad75a00cb705"
+                "sha256:44082cc8fe56b0186e87ee8f7c17c327c4c2ce93bdbe86496e600985d74368ee",
+                "sha256:6010f0faaacdaf7c4dff8aac84e226d23437b331dcda7e70367f6d73a7db1adc"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==0.58b0"
+            "version": "==0.59b0"
         },
         "opentelemetry-instrumentation-requests": {
             "hashes": [
-                "sha256:672a0be0bb5b52bea0c11820b35e27edcf4cd22d34abe4afc59a92a80519f8a8",
-                "sha256:ae9495e6ff64e27bdb839fce91dbb4be56e325139828e8005f875baf41951a2e"
+                "sha256:9af2ffe3317f03074d7f865919139e89170b6763a0251b68c25e8e64e04b3400",
+                "sha256:d43121532877e31a46c48649279cec2504ee1e0ceb3c87b80fe5ccd7eafc14c1"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==0.58b0"
+            "version": "==0.59b0"
         },
         "opentelemetry-proto": {
             "hashes": [
-                "sha256:30f5c494faf66f77faeaefa35ed4443c5edb3b0aa46dad073ed7210e1a789538",
-                "sha256:8ed8c066ae8828bbf0c39229979bdf583a126981142378a9cbe9d6fd5701c6e2"
+                "sha256:88b161e89d9d372ce723da289b7da74c3a8354a8e5359992be813942969ed468",
+                "sha256:b6ebe54d3217c42e45462e2a1ae28c3e2bf2ec5a5645236a490f55f45f1a0a18"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.37.0"
+            "version": "==1.38.0"
         },
         "opentelemetry-sdk": {
             "hashes": [
-                "sha256:8f3c3c22063e52475c5dbced7209495c2c16723d016d39287dfc215d1771257c",
-                "sha256:cc8e089c10953ded765b5ab5669b198bbe0af1b3f89f1007d19acd32dc46dda5"
+                "sha256:1c66af6564ecc1553d72d811a01df063ff097cdc82ce188da9951f93b8d10f6b",
+                "sha256:93df5d4d871ed09cb4272305be4d996236eedb232253e3ab864c8620f051cebe"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.37.0"
+            "version": "==1.38.0"
         },
         "opentelemetry-semantic-conventions": {
             "hashes": [
-                "sha256:5564905ab1458b96684db1340232729fce3b5375a06e140e8904c78e4f815b28",
-                "sha256:6bd46f51264279c433755767bb44ad00f1c9e2367e1b42af563372c5a6fa0c25"
+                "sha256:35d3b8833ef97d614136e253c1da9342b4c3c083bbaf29ce31d572a1c3825eed",
+                "sha256:7a6db3f30d70202d5bf9fa4b69bc866ca6a30437287de6c510fb594878aed6b0"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==0.58b0"
+            "version": "==0.59b0"
         },
         "opentelemetry-util-http": {
             "hashes": [
-                "sha256:6c6b86762ed43025fbd593dc5f700ba0aa3e09711aedc36fd48a13b23d8cb1e7",
-                "sha256:de0154896c3472c6599311c83e0ecee856c4da1b17808d39fdc5cce5312e4d89"
+                "sha256:6d036a07563bce87bf521839c0671b507a02a0d39d7ea61b88efa14c6e25355d",
+                "sha256:ae66ee91be31938d832f3b4bc4eb8a911f6eddd38969c4a871b1230db2a0a560"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==0.58b0"
+            "version": "==0.59b0"
         },
         "packaging": {
             "hashes": [
@@ -844,11 +844,11 @@
         },
         "requests-gssapi": {
             "hashes": [
-                "sha256:4d52bf8c2aa2a829130efcca85c14943fdd0aa75455aab985b2b8726159c20ca",
-                "sha256:f36303cd989c54d54630c30f1ef73d7e23acdede2285c941631192e51b4da418"
+                "sha256:146a1d1e74d7ca0b9d21af0f8d2d1ca259e9228ff57fbbf23f92e25217da4520",
+                "sha256:ba27eb329f4840d965bc8fa5d360c627c74349efa6156ca501ad89afc6a134f4"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==1.3.0"
+            "version": "==1.4.0"
         },
         "requests-oauthlib": {
             "hashes": [
