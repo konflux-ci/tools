@@ -401,11 +401,11 @@
         },
         "googleapis-common-protos": {
             "hashes": [
-                "sha256:0e1b44e0ea153e6594f9f394fef15193a68aaaea2d843f83e2742717ca753257",
-                "sha256:b8bfcca8c25a2bb253e0e0b0adaf8c00773e5e6af6fd92397576680b807e0fd8"
+                "sha256:1aec01e574e29da63c80ba9f7bbf1ccfaacf1da877f23609fe236ca7c72a2e2e",
+                "sha256:59034a1d849dc4d18971997a72ac56246570afdd17f9369a0ff68218d50ab78c"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==1.70.0"
+            "version": "==1.71.0"
         },
         "gssapi": {
             "hashes": [
@@ -554,9 +554,9 @@
                 "client"
             ],
             "hashes": [
-                "sha256:099a7de78e2c0dcdb461a466ac486ffea87d99fb6753ebcb200a709d75851aac"
+                "sha256:e10d50f3534f5084d0d60a0c2cbff910033333587fc6368b62f4fe30f99e0861"
             ],
-            "version": "==0.9.0"
+            "version": "==0.9.1"
         },
         "opentelemetry-api": {
             "hashes": [
