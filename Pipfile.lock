@@ -401,11 +401,11 @@
         },
         "googleapis-common-protos": {
             "hashes": [
-                "sha256:0e1b44e0ea153e6594f9f394fef15193a68aaaea2d843f83e2742717ca753257",
-                "sha256:b8bfcca8c25a2bb253e0e0b0adaf8c00773e5e6af6fd92397576680b807e0fd8"
+                "sha256:1aec01e574e29da63c80ba9f7bbf1ccfaacf1da877f23609fe236ca7c72a2e2e",
+                "sha256:59034a1d849dc4d18971997a72ac56246570afdd17f9369a0ff68218d50ab78c"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==1.70.0"
+            "version": "==1.71.0"
         },
         "gssapi": {
             "hashes": [
@@ -712,12 +712,12 @@
         },
         "pylint": {
             "hashes": [
-                "sha256:06db6a1fda3cedbd7aee58f09d241e40e5f14b382fd035ed97be320f11728a84",
-                "sha256:6077ac21d01b7361eae6ed0f38d9024c02732fdc635d9e154d4fe6063af8ac56"
+                "sha256:9627ccd129893fb8ee8e8010261cb13485daca83e61a6f854a85528ee579502d",
+                "sha256:9c22dfa52781d3b79ce86ab2463940f874921a3e5707bcfc98dd0c019945014e"
             ],
             "index": "pypi",
             "markers": "python_full_version >= '3.10.0'",
-            "version": "==4.0.1"
+            "version": "==4.0.2"
         },
         "pylint-pytest": {
             "hashes": [
