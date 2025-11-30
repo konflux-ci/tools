@@ -3,12 +3,19 @@ FROM quay.io/konflux-ci/buildah-task:latest@sha256:c711eeac025a5f829d5d7bb281d7e
 FROM registry.access.redhat.com/ubi9/python-311:9.7-1764275252
 
 LABEL \
+    name="konflux-ci/tools" \
     description="Tools for Red Hat AppStudio" \
     io.k8s.description="Tools for Red Hat AppStudio" \
     io.k8s.display-name="Tools for Red Hat AppStudio" \
     io.openshift.tags="appstudio" \
     summary="This image contains various tools that are used within Red Hat \
-AppStudio. The included tools are, for the most part, written in Python."
+AppStudio. The included tools are, for the most part, written in Python." \
+    com.redhat.component="konflux-ci-tools-container" \
+    version="1.0" \
+    release="1" \
+    vendor="Red Hat, Inc." \
+    distribution-scope="public" \
+    url="https://github.com/konflux-ci/tools"
 
 ENV \
     ENABLE_PIPENV=true \
