@@ -13,6 +13,54 @@ from subprocess import CalledProcessError, run
 from typing import Any, Callable, Iterable, Tuple
 
 import click
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
+
+TRANSIENT_PATTERNS = [
+    "502 bad gateway",
+    "503 service",
+    "429",
+    "connection reset",
+    "connection refused",
+    "could not resolve host",
+    "unexpected end of json",
+    "connection timed out",
+    "tls handshake timeout",
+    "etimedout",
+]
+
+
+def _is_transient_error(exception: BaseException) -> bool:
+    if isinstance(exception, CalledProcessError) and exception.stderr:
+        stderr_str = (
+            exception.stderr
+            if isinstance(exception.stderr, str)
+            else exception.stderr.decode("utf-8", errors="ignore")
+        )
+        return any(pattern in stderr_str.lower() for pattern in TRANSIENT_PATTERNS)
+    return False
+
+
+def _log_retry(retry_state):
+    print(
+        f"WARNING: Transient error (attempt {retry_state.attempt_number}/4), "
+        f"retrying in {retry_state.next_action.sleep:.1f}s: "
+        f"{retry_state.outcome.exception()}",
+        file=sys.stderr,
+    )
+
+
+_retry_on_transient = retry(
+    retry=retry_if_exception(_is_transient_error),
+    stop=stop_after_attempt(4),
+    wait=wait_exponential_jitter(initial=5, max=60, jitter=3),
+    reraise=True,
+    before_sleep=_log_retry,
+)
 
 
 @dataclass(frozen=True)
@@ -35,6 +83,7 @@ class ProcessedImage:
     output: str = ""
 
 
+@_retry_on_transient
 def get_rpmdb(container_image: str, target_dir: Path, runner: Callable = run) -> Path:
     """
     Extract RPM DB from a given container image reference
@@ -131,6 +180,7 @@ def generate_image_results(
     return results
 
 
+@_retry_on_transient
 def inspect_image_ref(
     image_url: str, image_digest: str, runner: Callable = run
 ) -> dict[str, Any]:

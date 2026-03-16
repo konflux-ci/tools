@@ -11,11 +11,13 @@ from unittest.mock import MagicMock, create_autospec
 
 import pytest
 from pytest import MonkeyPatch
+from tenacity import wait_none
 
 from verify_rpms import rpm_verifier
 from verify_rpms.rpm_verifier import (
     ImageProcessor,
     ProcessedImage,
+    _is_transient_error,
     aggregate_results,
     generate_image_output,
     generate_image_results,
@@ -1251,3 +1253,168 @@ class TestMain:
         mock_generate_image_output.assert_called_once()
         mock_aggregate_results.assert_not_called()
         mock_generate_images_processed_result.assert_not_called()
+
+
+# ============================================================
+# Retry logic tests
+# ============================================================
+
+
+class TestIsTransientError:
+    """Test _is_transient_error helper"""
+
+    @pytest.mark.parametrize(
+        "stderr",
+        [
+            "HTTP 502 Bad Gateway",
+            "503 Service Unavailable",
+            "rate limit exceeded 429",
+            "connection reset by peer",
+            "connection refused",
+            "Could not resolve host: quay.io",
+            "unexpected end of JSON input",
+            "dial tcp: lookup quay.io: ETIMEDOUT",
+            "TLS handshake timeout",
+        ],
+    )
+    def test_transient_errors_detected(self, stderr: str) -> None:
+        """Test that known transient error patterns are detected"""
+        err = CalledProcessError(1, "cmd", stderr=stderr)
+        assert _is_transient_error(err) is True
+
+    @pytest.mark.parametrize(
+        "stderr",
+        [
+            "image not found",
+            "manifest unknown",
+            "unauthorized: access denied",
+            "invalid reference format",
+        ],
+    )
+    def test_permanent_errors_not_detected(self, stderr: str) -> None:
+        """Test that permanent errors are not classified as transient"""
+        err = CalledProcessError(1, "cmd", stderr=stderr)
+        assert _is_transient_error(err) is False
+
+    def test_no_stderr(self) -> None:
+        """Test that errors with no stderr are not transient"""
+        err = CalledProcessError(1, "cmd", stderr=None)
+        assert _is_transient_error(err) is False
+
+    def test_non_called_process_error(self) -> None:
+        """Test that non-CalledProcessError exceptions are not transient"""
+        assert _is_transient_error(RuntimeError("something")) is False
+
+
+class TestGetRpmdbRetry:
+    """Test retry behavior of get_rpmdb"""
+
+    @pytest.fixture(autouse=True)
+    def _disable_wait(self, monkeypatch: MonkeyPatch) -> None:
+        """Disable retry wait for fast tests"""
+        monkeypatch.setattr(
+            get_rpmdb.retry,  # type: ignore[attr-defined]
+            "wait",
+            wait_none(),
+        )
+
+    def test_retries_on_transient_error(self, tmp_path: Path) -> None:
+        """Test that transient errors trigger a retry"""
+        mock_runner = create_autospec(run)
+        transient_error = CalledProcessError(1, "oc", stderr="HTTP 502 Bad Gateway")
+        mock_runner.side_effect = [transient_error, MagicMock()]
+
+        result = get_rpmdb(
+            container_image="my-image",
+            target_dir=tmp_path,
+            runner=mock_runner,
+        )
+        assert mock_runner.call_count == 2
+        assert result == tmp_path
+
+    def test_no_retry_on_permanent_error(self, tmp_path: Path) -> None:
+        """Test that permanent errors fail immediately without retry"""
+        mock_runner = create_autospec(run)
+        permanent_error = CalledProcessError(1, "oc", stderr="image not found")
+        mock_runner.side_effect = permanent_error
+
+        with pytest.raises(CalledProcessError):
+            get_rpmdb(
+                container_image="my-image",
+                target_dir=tmp_path,
+                runner=mock_runner,
+            )
+        assert mock_runner.call_count == 1
+
+    def test_exhausts_retries(self, tmp_path: Path) -> None:
+        """Test that retries are exhausted after max attempts"""
+        mock_runner = create_autospec(run)
+        transient_error = CalledProcessError(1, "oc", stderr="503 Service Unavailable")
+        mock_runner.side_effect = transient_error
+
+        with pytest.raises(CalledProcessError):
+            get_rpmdb(
+                container_image="my-image",
+                target_dir=tmp_path,
+                runner=mock_runner,
+            )
+        assert mock_runner.call_count == 4
+
+
+class TestInspectImageRefRetry:
+    """Test retry behavior of inspect_image_ref"""
+
+    @pytest.fixture(autouse=True)
+    def _disable_wait(self, monkeypatch: MonkeyPatch) -> None:
+        """Disable retry wait for fast tests"""
+        monkeypatch.setattr(
+            inspect_image_ref.retry,  # type: ignore[attr-defined]
+            "wait",
+            wait_none(),
+        )
+
+    def test_retries_on_transient_error(self) -> None:
+        """Test that transient errors trigger a retry"""
+        mock_runner = create_autospec(run)
+        transient_error = CalledProcessError(
+            1, "skopeo", stderr="connection reset by peer"
+        )
+        success_result = MagicMock()
+        success_result.stdout = '{"schemaVersion": 2}'
+        mock_runner.side_effect = [transient_error, success_result]
+
+        result = inspect_image_ref(
+            image_url="quay.io/test/image:tag",
+            image_digest="sha256:abc123",
+            runner=mock_runner,
+        )
+        assert mock_runner.call_count == 2
+        assert result == {"schemaVersion": 2}
+
+    def test_no_retry_on_permanent_error(self) -> None:
+        """Test that permanent errors fail immediately without retry"""
+        mock_runner = create_autospec(run)
+        permanent_error = CalledProcessError(1, "skopeo", stderr="manifest unknown")
+        mock_runner.side_effect = permanent_error
+
+        with pytest.raises(CalledProcessError):
+            inspect_image_ref(
+                image_url="quay.io/test/image:tag",
+                image_digest="sha256:abc123",
+                runner=mock_runner,
+            )
+        assert mock_runner.call_count == 1
+
+    def test_exhausts_retries(self) -> None:
+        """Test that retries are exhausted after max attempts"""
+        mock_runner = create_autospec(run)
+        transient_error = CalledProcessError(1, "skopeo", stderr="ETIMEDOUT")
+        mock_runner.side_effect = transient_error
+
+        with pytest.raises(CalledProcessError):
+            inspect_image_ref(
+                image_url="quay.io/test/image:tag",
+                image_digest="sha256:abc123",
+                runner=mock_runner,
+            )
+        assert mock_runner.call_count == 4

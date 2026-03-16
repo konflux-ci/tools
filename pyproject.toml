@@ -16,6 +16,7 @@ dependencies = [
     "pyyaml",
     "odcs[client]",
     "kubernetes",
+    "tenacity",
 ]
 
 [project.scripts]
@@ -36,3 +37,5 @@ target-version = ["py311"]
 
 [tool.pylint]
 load-plugins = ["pylint_pytest"]
+
+
