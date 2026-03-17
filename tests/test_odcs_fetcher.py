@@ -14,31 +14,23 @@ from generate_compose.odcs_requester import ODCSRequestReferences
     ("composes", "urls"),
     [
         pytest.param(
-            [
-                dedent(
-                    """
+            [dedent("""
                     [odcs-111]
                     name=compose 1
-                    """
-                )
-            ],
+                    """)],
             ["https://url1"],
             id="single compose",
         ),
         pytest.param(
             [
-                dedent(
-                    """
+                dedent("""
                     [odcs-111]
                     name=compose 1
-                    """
-                ),
-                dedent(
-                    """
+                    """),
+                dedent("""
                     [odcs-222]
                     name=compose 2
-                    """
-                ),
+                    """),
             ],
             ["https://url1", "https://url2"],
             id="multiple composes",

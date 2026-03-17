@@ -56,14 +56,12 @@ def test_get_rpmdb(tmp_path: Path) -> None:
     ("test_input", "expected"),
     [
         pytest.param(
-            dedent(
-                """
+            dedent("""
                 libssh-config-0.9.6-10.el8_8 RSA/SHA256, Tue 6 May , Key ID 1234567890
                 python39-twisted-23.10.0-1.el8ap (none)
                 libmodulemd-2.13.0-1.el8 RSA/SHA256, Wed 18 Aug , Key ID 1234567890
                 gpg-pubkey-d4082792-5b32db75 (none)
-                """
-            ).strip(),
+                """).strip(),
             [
                 "libssh-config-0.9.6-10.el8_8 RSA/SHA256, Tue 6 May , Key ID 1234567890",
                 "python39-twisted-23.10.0-1.el8ap (none)",
@@ -234,51 +232,43 @@ def test_inspect_image_ref() -> None:
             "image1",
             [],
             "",
-            dedent(
-                """
+            dedent("""
                 Image: image1
                 No unsigned RPMs found
-                """
-            ).strip(),
+                """).strip(),
             id="No unsigned RPMs + no errors. Do not report failures",
         ),
         pytest.param(
             "image1",
             ["my-rpm"],
             "",
-            dedent(
-                """
+            dedent("""
                 Image: image1
                 Found unsigned RPMs:
                 ['my-rpm']
-                """
-            ).strip(),
+                """).strip(),
             id="Unsigned RPM + no errors. Report failures",
         ),
         pytest.param(
             "image1",
             ["my-rpm", "another-rpm"],
             "",
-            dedent(
-                """
+            dedent("""
                 Image: image1
                 Found unsigned RPMs:
                 ['my-rpm', 'another-rpm']
-                """
-            ).strip(),
+                """).strip(),
             id="An image with multiple unsigned RPMs Report failure",
         ),
         pytest.param(
             "image1",
             [],
             "Failed to run command",
-            dedent(
-                """
+            dedent("""
                 Image: image1
                 Error occurred:
                 Failed to run command
-                """
-            ).strip(),
+                """).strip(),
             id="Error when running command, Report failure",
         ),
     ],
@@ -431,16 +421,14 @@ def test_get_images_from_inspection(
                     results={"keys": {"321": 1, "654": 1, "unsigned": 0}},
                 ),
             ],
-            dedent(
-                """
+            dedent("""
          image1 output
          {'keys': {'123': 1, '456': 1, 'unsigned': 0}}
          ====================================
          image2 output
          {'keys': {'321': 1, '654': 1, 'unsigned': 0}}
          ====================================
-         """
-            ).strip(),
+         """).strip(),
             False,
             id="no errors, no unsigned",
         ),
@@ -463,16 +451,14 @@ def test_get_images_from_inspection(
                     results={"keys": {"321": 1, "654": 1, "unsigned": 0}},
                 ),
             ],
-            dedent(
-                """
+            dedent("""
          image1 output
          {'keys': {'123': 1, '456': 1, 'unsigned': 2}}
          ====================================
          image2 output
          {'keys': {'321': 1, '654': 1, 'unsigned': 0}}
          ====================================
-         """
-            ).strip(),
+         """).strip(),
             False,
             id="no errors, image with unsigned, should not expect failure",
         ),
@@ -495,16 +481,14 @@ def test_get_images_from_inspection(
                     results={"keys": {"321": 1, "654": 1, "unsigned": 0}},
                 ),
             ],
-            dedent(
-                """
+            dedent("""
          image1 output
          {'error': 'Error message'}
          ====================================
          image2 output
          {'keys': {'321': 1, '654': 1, 'unsigned': 0}}
          ====================================
-         """
-            ).strip(),
+         """).strip(),
             True,
             id="image with error, should expect failure",
         ),
@@ -739,13 +723,11 @@ class TestImageProcessor:
                 ],
                 ["python39-twisted-23.10.0-1.el8ap"],
                 ["1234567890", "1234567890"],
-                dedent(
-                    """
+                dedent("""
                 Image: my-img
                 Found unsigned RPMs:
                 ['python39-twisted-23.10.0-1.el8ap']
-                """
-                ).strip(),
+                """).strip(),
                 {"keys": {"1234567890": 2, "unsigned": 1}},
                 id="one unsigned, two signed",
             ),
