@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 """Verify RPMs are signed"""
+
 import json
 import sys
 import tempfile

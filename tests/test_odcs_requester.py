@@ -166,12 +166,10 @@ class TestODCSRequester:
             pytest.param(
                 ODCSComposesConfigs([ODCSComposeConfig(spec=compose_source)]),
                 1,
-                dedent(
-                    """
+                dedent("""
                     Failed to generate some composes:
                     1: state=sentinel.fail_state reason=sentinel.fail_reason
-                    """
-                ).strip(),
+                    """).strip(),
                 id="single compose - failed",
             ),
             pytest.param(
@@ -182,12 +180,10 @@ class TestODCSRequester:
                     ]
                 ),
                 1,
-                dedent(
-                    """
+                dedent("""
                     Failed to generate some composes:
                     1: state=sentinel.fail_state reason=sentinel.fail_reason
-                    """
-                ).strip(),
+                    """).strip(),
                 id="multiple composes - some failed",
             ),
             pytest.param(
@@ -198,13 +194,11 @@ class TestODCSRequester:
                     ]
                 ),
                 2,
-                dedent(
-                    """
+                dedent("""
                     Failed to generate some composes:
                     1: state=sentinel.fail_state reason=sentinel.fail_reason
                     2: state=sentinel.fail_state reason=sentinel.fail_reason
-                    """
-                ).strip(),
+                    """).strip(),
                 id="multiple composes - all failed",
             ),
         ],
