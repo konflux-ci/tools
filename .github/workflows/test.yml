@@ -1,6 +1,8 @@
 name: Run tests
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   merge_group:
@@ -9,6 +11,7 @@ jobs:
   test:
     permissions:
       checks: write
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -26,4 +29,11 @@ jobs:
         run: pipenv sync
       - name: Run tests
         run: |
-          pipenv run pytest tests
+          pipenv run pytest --cov=verify_rpms --cov-report=xml:coverage.xml tests
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          flags: unit-tests
+          files: coverage.xml
+          fail_ci_if_error: false

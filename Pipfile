@@ -20,6 +20,7 @@ appstudio-tools = {file = ".", editable = true}
 pylint-pytest = "*"
 authlib = "*"
 kubernetes = "*"
+pytest-cov = "*"
 
 [dev-packages]
 pytest = "*"
