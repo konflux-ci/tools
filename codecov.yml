@@ -1,0 +1,27 @@
+codecov:
+  require_ci_to_pass: yes
+
+coverage:
+  precision: 2
+  round: down
+  range: "50...100"
+
+  status:
+    project:
+      default:
+        partials_as_hits: true
+    patch:
+      default:
+        partials_as_hits: true
+
+ignore:
+  - "generate_compose/**"
+  - "clean_spacerequests/**"
+
+flags:
+  unit-tests:
+    carryforward: true
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
