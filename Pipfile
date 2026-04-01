@@ -21,6 +21,7 @@ pylint-pytest = "*"
 authlib = "*"
 kubernetes = "*"
 pytest-cov = "*"
+tenacity = "*"
 
 [dev-packages]
 pytest = "*"
