@@ -26,7 +26,7 @@ rpm_verifier = "verify_rpms.rpm_verifier:main"
 clean_spacerequests = "clean_spacerequests.spacerequests_cleaner:main"
 
 [build-system]
-requires = ["setuptools>=43.0.0", "wheel"]
+requires = ["setuptools>=82.0.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages]
