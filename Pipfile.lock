@@ -30,12 +30,12 @@
         },
         "authlib": {
             "hashes": [
-                "sha256:64db35b9b01aeccb4715a6c9a6613a06f2bd7be2ab9d2eb89edd1dfc7580a38f",
-                "sha256:c8687a9a26451c51a34a06fa17bb97cb15bba46a6a626755e2d7f50da8bff3e3"
+                "sha256:b3e326c9aa9cc3ea95fe7d89fd880722d3608da4d00e8a27e061e64b48d801d5",
+                "sha256:e36817afb02f6f0b6bf55f150782499ddd6ddf44b402bb055d3263cc65ac9ae0"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.9'",
-            "version": "==1.6.11"
+            "markers": "python_version >= '3.10'",
+            "version": "==1.7.0"
         },
         "black": {
             "hashes": [
@@ -577,6 +577,14 @@
             "index": "pypi",
             "markers": "python_full_version >= '3.10.0'",
             "version": "==8.0.1"
+        },
+        "joserfc": {
+            "hashes": [
+                "sha256:34ce5f499bfcc5e9ad4cc75077f9278ab3227b71da9aaf28f9ab705f8a560d3c",
+                "sha256:3e4a22b509b41908989237a045e25c8308d5fd47ab96bdae2dd8057c6451003a"
+            ],
+            "markers": "python_version >= '3.9'",
+            "version": "==1.6.4"
         },
         "kubernetes": {
             "hashes": [
