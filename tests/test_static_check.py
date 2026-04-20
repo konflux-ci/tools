@@ -7,6 +7,7 @@ PKGS: Final[list[str]] = [
     "tests",
     "generate_compose",
     "verify_rpms",
+    "helm_chart_oci",
     "clean_spacerequests",
 ]
 
