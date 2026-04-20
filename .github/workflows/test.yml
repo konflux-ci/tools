@@ -29,7 +29,7 @@ jobs:
         run: pipenv sync
       - name: Run tests
         run: |
-          pipenv run pytest --cov=verify_rpms --cov-report=xml:coverage.xml tests
+          pipenv run pytest --cov=verify_rpms --cov=helm_chart_oci --cov-report=xml:coverage.xml tests
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6
         with:
