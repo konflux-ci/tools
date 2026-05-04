@@ -29,6 +29,8 @@ RUN /usr/bin/fix-permissions /tmp/src \
     && /usr/bin/update-ca-trust
 RUN yum install -y krb5-workstation skopeo jq
 RUN curl -L https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+ARG TARGETARCH
+# yq should be deprecated as it is not in use anymore
 RUN wget https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64.tar.gz -O - |\
     tar xz && mv yq_linux_amd64 /usr/bin/yq
 COPY data/kerberos/krb5.conf /etc
@@ -37,6 +39,11 @@ COPY --from=buildah-task-image /usr/bin/retry /usr/bin/
 USER 1001
 
 RUN \
-    curl -L https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/4.12.36/openshift-client-linux.tar.gz \
-    | tar -C /opt/app-root/bin/ -xvzf - oc \
+    case "${TARGETARCH}" in \
+        amd64) OCP_ARCH=amd64  ;; \
+        arm64) OCP_ARCH=arm64 ;; \
+        *)     echo "Unsupported arch: ${TARGETARCH}" && exit 1 ;; \
+    esac \
+    && curl -L "https://mirror.openshift.com/pub/openshift-v4/${OCP_ARCH}/clients/ocp/4.12.36/openshift-client-linux.tar.gz" \
+       | tar -C /opt/app-root/bin/ -xvzf - oc \
     && /usr/libexec/s2i/assemble
