@@ -1,0 +1,31 @@
+name: Helm chart OCI Docker e2e
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+
+# ZOT_IMAGE digest is updated by Renovate (customManagers regex in renovate.json).
+env:
+  ZOT_IMAGE: quay.io/konflux-ci/zot:latest@sha256:e340476adf7c644165ff49e5cc81c849bdad85e33c205429ad417e28cde59e57
+
+jobs:
+  helm-chart-oci-docker-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build tools image and run helm_chart_oci e2e
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/helm-chart-oci-ci-runner-e2e.sh"
+
+      - name: Remove ephemeral Zot data, container, and network
+        if: always()
+        env:
+          ZOT_DIR: ${{ runner.temp }}/zot-e2e-${{ github.run_id }}
+        run: |
+          docker rm -f "helm-reg-${{ github.run_id }}" 2>/dev/null || true
+          docker network rm "helm-oci-e2e-${{ github.run_id }}" 2>/dev/null || true
+          sudo rm -rf "${ZOT_DIR}" 2>/dev/null || true

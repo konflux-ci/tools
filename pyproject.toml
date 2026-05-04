@@ -23,6 +23,7 @@ dependencies = [
 odcs_compose_generator = "generate_compose.odcs_compose_generator:main"
 odcs_ping = "generate_compose.odcs_ping:main"
 rpm_verifier = "verify_rpms.rpm_verifier:main"
+helm_chart_oci = "helm_chart_oci.cli:main"
 clean_spacerequests = "clean_spacerequests.spacerequests_cleaner:main"
 
 [build-system]
@@ -37,5 +38,11 @@ target-version = ["py311"]
 
 [tool.pylint]
 load-plugins = ["pylint_pytest"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    # Emitted on import from generate_compose/__init__.py; noisy for every test run.
+    "ignore:Package generate_compose is deprecated.:DeprecationWarning",
+]
 
 
