@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: 3.11
+          python-version-file: Pipfile
       - name: Install pipenv
         run: pip install pipenv==2023.7.23
       - name: install packages
