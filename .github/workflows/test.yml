@@ -15,6 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Validate AGENTS.md line count
+        run: |
+          MAX_LINES=300
+          ACTUAL_LINES=$(wc -l < AGENTS.md)
+          if [ "$ACTUAL_LINES" -gt "$MAX_LINES" ]; then
+            echo "::error::AGENTS.md has $ACTUAL_LINES lines, must be <= $MAX_LINES"
+            exit 1
+          fi
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
