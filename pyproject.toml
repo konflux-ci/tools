@@ -7,7 +7,7 @@ name = "appstudio-tools"
 version = "0.1.0"
 description = "Tools for Red Hat AppStudio"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = {file = "LICENSE"}
 keywords = ["appstudio", "odcs", "rpm", "development"]
 dependencies = [
@@ -33,7 +33,7 @@ build-backend = "setuptools.build_meta"
 find = {}
 
 [tool.black]
-target-version = ["py311"]
+target-version = ["py312"]
 
 [tool.pylint]
 load-plugins = ["pylint_pytest"]
