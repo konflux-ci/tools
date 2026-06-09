@@ -37,3 +37,9 @@ Repo guidance for AI/code agents working in `konflux-ci/tools`.
 - No secrets or credentials added.
 - No unrelated refactors bundled with the fix.
 - Documentation updated when introducing non-obvious behavior.
+
+## Skills
+
+| Skill | Use when |
+|-------|----------|
+| [review-hermetic-multiarch-debt](skills/review-hermetic-multiarch-debt/SKILL.md) | Reviewing PRs for Dockerfile, deps, `.tekton/`, or build/runtime debt |
