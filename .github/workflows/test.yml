@@ -26,9 +26,9 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version-file: Pipfile
+          python-version-file: .python-version
       - name: Install pipenv
-        run: pip install pipenv==2023.7.23
+        run: pip install pipenv==$(cat .pipenv-version)
       - name: install packages
         run: |
           sudo apt-get update

@@ -1,6 +1,6 @@
 FROM quay.io/konflux-ci/buildah-task:latest@sha256:4c470b5a153c4acd14bf4f8731b5e36c61d7faafe09c2bf376bb81ce84aa5709 AS buildah-task-image
 
-FROM registry.access.redhat.com/ubi9/python-311:9.8-1777569679
+FROM registry.access.redhat.com/ubi9/python-312:1-1762230134@sha256:f9a256f5dc66ac635d854b4d80cb720846d6120606422fccbd35de1d69affd86
 
 LABEL \
     name="konflux-ci/tools" \
@@ -17,6 +17,7 @@ AppStudio. The included tools are, for the most part, written in Python." \
     distribution-scope="public" \
     url="https://github.com/konflux-ci/tools"
 
+# Keep PIN_PIPENV_VERSION in sync with .pipenv-version
 ENV \
     ENABLE_PIPENV=true \
     PIN_PIPENV_VERSION=2023.11.15 \
