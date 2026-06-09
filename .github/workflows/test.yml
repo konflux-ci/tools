@@ -26,9 +26,9 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version-file: Pipfile
+          python-version-file: .python-version
       - name: Install pipenv
-        run: pip install pipenv==2023.7.23
+        run: pip install pipenv==$(cat .pipenv-version)
       - name: install packages
         run: |
           sudo apt-get update
@@ -39,7 +39,7 @@ jobs:
         run: |
           pipenv run pytest --cov=verify_rpms --cov-report=xml:coverage.xml tests
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           use_oidc: true
           flags: unit-tests

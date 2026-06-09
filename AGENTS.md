@@ -11,7 +11,7 @@ Repo guidance for AI/code agents working in `konflux-ci/tools`.
 - `.tekton/`: Pipeline-as-Code definitions used in Konflux.
 
 ## Environment and commands
-- Python: use `pipenv` (see `Pipfile` and `Pipfile.lock`).
+- Python: use `pipenv` (see `Pipfile`, `Pipfile.lock`, and `.python-version`).
 - Install deps: `pipenv sync`
 - Run tests: `pipenv run pytest tests`
 - Run one test file: `pipenv run pytest tests/test_spacerequests_cleaner.py`
@@ -37,3 +37,9 @@ Repo guidance for AI/code agents working in `konflux-ci/tools`.
 - No secrets or credentials added.
 - No unrelated refactors bundled with the fix.
 - Documentation updated when introducing non-obvious behavior.
+
+## Skills
+
+| Skill | Use when |
+|-------|----------|
+| [review-hermetic-multiarch-debt](skills/review-hermetic-multiarch-debt/SKILL.md) | Reviewing PRs for Dockerfile, deps, `.tekton/`, or build/runtime debt |

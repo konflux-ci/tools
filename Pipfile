@@ -27,4 +27,5 @@ tenacity = "*"
 pytest = "*"
 
 [requires]
-python_version = "3.11"
+# Keep in sync with .python-version
+python_version = "3.12"

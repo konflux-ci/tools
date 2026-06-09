@@ -80,8 +80,9 @@
       "autoApprove": true
     },
     {
-      "description": "Group Python version updates for manual review", 
+      "description": "Group Python version updates for manual review",
       "groupName": "python-version",
+      "matchFileNames": [".python-version"],
       "matchDatasources": ["python-version"],
       "automerge": false,
       "autoApprove": false
