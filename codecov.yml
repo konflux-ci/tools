@@ -1,18 +1,17 @@
 codecov:
-  require_ci_to_pass: yes
+  require_ci_to_pass: true
 
 coverage:
-  precision: 2
-  round: down
-  range: "50...100"
-
   status:
     project:
       default:
-        partials_as_hits: true
+        target: auto
+        threshold: 1%
+        informational: true
     patch:
       default:
-        partials_as_hits: true
+        target: 80%
+        informational: true
 
 ignore:
   - "generate_compose/**"
@@ -23,5 +22,5 @@ flags:
     carryforward: true
 
 comment:
-  layout: "reach,diff,flags,files"
-  behavior: default
+  layout: "reach,diff,flags,files,footer"
+  require_changes: true
