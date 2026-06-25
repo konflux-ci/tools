@@ -1,6 +1,6 @@
 FROM quay.io/konflux-ci/buildah-task:latest@sha256:4c470b5a153c4acd14bf4f8731b5e36c61d7faafe09c2bf376bb81ce84aa5709 AS buildah-task-image
 
-FROM registry.access.redhat.com/ubi9/python-312:1782221805@sha256:37c869e16388c960d533f317c48e2cad8e80561b0c6b59e697e38e7e9d103b9b
+FROM registry.access.redhat.com/ubi9/python-312:1782396563@sha256:7c894bf0e8449c8db4228cf99e4cd200c78ad9e56090055bf6073af055805cd6
 
 LABEL \
     name="konflux-ci/tools" \
