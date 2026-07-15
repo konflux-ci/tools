@@ -1,0 +1,113 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: helm-chart-oci-e2e
+spec:
+  description: >-
+    End-to-end validation for helm_chart_oci using the freshly built tools image.
+    Creates a minimal chart, pushes it to OCI, pulls it back, and validates outputs.
+  params:
+    - name: tools-image
+      description: Image used to run helm_chart_oci (built earlier in pipeline)
+      type: string
+    - name: test-image
+      description: Full chart image reference with tag used by helm_chart_oci
+      type: string
+    - name: chart-version
+      description: Explicit chart version for deterministic verification
+      type: string
+      default: "1.2.3"
+  results:
+    - name: pushed-image-url
+      description: URL written by helm_chart_oci
+    - name: pushed-image-digest
+      description: Digest written by helm_chart_oci
+  workspaces:
+    - name: source
+  steps:
+    - name: run-helm-chart-oci-e2e
+      image: $(params.tools-image)
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: HOME
+          value: /tekton/home
+        - name: IMAGE
+          value: $(params.test-image)
+        - name: COMMIT_SHA
+          value: e2e
+        - name: SOURCE_CODE_DIR
+          value: source
+        - name: CHART_CONTEXT
+          value: chart
+        - name: VERSION_SUFFIX
+          value: ""
+        - name: TAG_PREFIX
+          value: helm-
+        - name: IMAGE_MAPPINGS
+          value: "[]"
+        - name: CHART_VERSION
+          value: $(params.chart-version)
+        - name: APP_VERSION
+          value: e2e
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+
+        mkdir -p source/chart/templates
+
+        cat > source/chart/Chart.yaml <<'EOF'
+        apiVersion: v2
+        name: placeholder
+        version: 0.1.0
+        EOF
+
+        cat > source/chart/values.yaml <<'EOF'
+        image: quay.io/example/app:latest
+        EOF
+
+        cat > source/chart/templates/configmap.yaml <<'EOF'
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: e2e
+        data:
+          key: value
+        EOF
+
+        helm_chart_oci \
+          --workdir "$(workspaces.source.path)" \
+          --result-image-url "$(results.pushed-image-url.path)" \
+          --result-image-digest "$(results.pushed-image-digest.path)" \
+          values.yaml
+
+        repo="${IMAGE%:*}"
+        chart_name="${repo##*/}"
+        expected_url="${repo}:$(params.chart-version)"
+        actual_url="$(cat "$(results.pushed-image-url.path)")"
+
+        if [ "${actual_url}" != "${expected_url}" ]; then
+          echo "Unexpected pushed image URL"
+          echo "Expected: ${expected_url}"
+          echo "Actual:   ${actual_url}"
+          exit 1
+        fi
+
+        if [ ! -s "$(results.pushed-image-digest.path)" ]; then
+          echo "Expected a non-empty pushed image digest"
+          exit 1
+        fi
+
+        pull_dest="$(workspaces.source.path)/pulled"
+        mkdir -p "${pull_dest}"
+
+        helm pull "oci://${repo%/*}/${chart_name}" \
+          --version "$(params.chart-version)" \
+          --destination "${pull_dest}"
+
+        pulled_chart="${pull_dest}/${chart_name}-$(params.chart-version).tgz"
+        if [ ! -f "${pulled_chart}" ]; then
+          echo "Expected pulled chart archive: ${pulled_chart}"
+          exit 1
+        fi
+
+        tar -tzf "${pulled_chart}" >/dev/null
