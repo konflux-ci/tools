@@ -386,6 +386,84 @@ def test_generate_image_output(
             ],
             id="Image index, return list of images from manifests",
         ),
+        pytest.param(
+            {
+                "manifests": [
+                    {
+                        "digest": "sha256:amd64gzip",
+                        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                        "platform": {"architecture": "amd64", "os": "linux"},
+                        "size": 429,
+                    },
+                    {
+                        "digest": "sha256:amd64zstd",
+                        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                        "platform": {"architecture": "amd64", "os": "linux"},
+                        "size": 429,
+                        "annotations": {
+                            "io.github.containers.compression.zstd": "true"
+                        },
+                    },
+                    {
+                        "digest": "sha256:arm64gzip",
+                        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                        "platform": {"architecture": "arm64", "os": "linux"},
+                        "size": 429,
+                    },
+                    {
+                        "digest": "sha256:arm64zstd",
+                        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                        "platform": {"architecture": "arm64", "os": "linux"},
+                        "size": 429,
+                        "annotations": {
+                            "io.github.containers.compression.zstd": "true"
+                        },
+                    },
+                ],
+                "mediaType": "application/vnd.oci.image.index.v1+json",
+                "schemaVersion": 2,
+            },
+            "quay.io/test/image:tag",
+            "sha256:1234567890",
+            [
+                "quay.io/test/image@sha256:amd64gzip",
+                "quay.io/test/image@sha256:arm64gzip",
+            ],
+            id="Dual-compression index, only gzip manifests returned",
+        ),
+        pytest.param(
+            {
+                "manifests": [
+                    {
+                        "digest": "sha256:amd64zstd",
+                        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                        "platform": {"architecture": "amd64", "os": "linux"},
+                        "size": 429,
+                        "annotations": {
+                            "io.github.containers.compression.zstd": "true"
+                        },
+                    },
+                    {
+                        "digest": "sha256:arm64zstd",
+                        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                        "platform": {"architecture": "arm64", "os": "linux"},
+                        "size": 429,
+                        "annotations": {
+                            "io.github.containers.compression.zstd": "true"
+                        },
+                    },
+                ],
+                "mediaType": "application/vnd.oci.image.index.v1+json",
+                "schemaVersion": 2,
+            },
+            "quay.io/test/image:tag",
+            "sha256:1234567890",
+            [
+                "quay.io/test/image@sha256:amd64zstd",
+                "quay.io/test/image@sha256:arm64zstd",
+            ],
+            id="Zstd-only index, all manifests returned as fallback",
+        ),
     ],
 )
 def test_get_images_from_inspection(

@@ -233,7 +233,11 @@ def get_images_from_inspection(
     """
     Analyze the inspection results and return all the images for the image reference
     The image reference may refer to an image index (AKA Manifest list)
-    In this case, extract all the digests from the manifests and return the list of image references
+    In this case, extract all the digests from the manifests and return the list
+    of image references. Manifests with the io.github.containers.compression.zstd
+    annotation are skipped when non-zstd variants exist, since oc image extract
+    cannot decompress zstd layers. If all manifests are zstd, they are all
+    returned so that the error surfaces rather than silently scanning nothing.
     :param inspect_results: inspection results dictionary
     :param image_url: image url to inspect
     :param image_digest: image digest to inspect
@@ -241,9 +245,24 @@ def get_images_from_inspection(
     """
     if "manifests" in inspect_results:
         manifests = inspect_results["manifests"]
+        non_zstd_manifests = [
+            man
+            for man in manifests
+            if not man.get("annotations", {}).get(
+                "io.github.containers.compression.zstd"
+            )
+        ]
+        if non_zstd_manifests and len(non_zstd_manifests) < len(manifests):
+            print(
+                f"Skipping {len(manifests) - len(non_zstd_manifests)} "
+                "zstd-compressed manifest(s)",
+                file=sys.stderr,
+            )
+        if not non_zstd_manifests:
+            non_zstd_manifests = manifests
         image_list = [
             f"{':'.join(image_url.split(':')[:-1])}@" + man["digest"]
-            for man in manifests
+            for man in non_zstd_manifests
         ]
         return image_list
     return [f"{':'.join(image_url.split(':')[:-1])}@{image_digest}"]
