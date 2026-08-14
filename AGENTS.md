@@ -29,6 +29,13 @@ Repo guidance for AI/code agents working in `konflux-ci/tools`.
 - Do not edit `.tekton/` or workflow files unless the task requires CI/pipeline updates.
 - Python version is pinned in `.python-version` and must stay in lockstep with `Pipfile` (`python_version`), `pyproject.toml` (`requires-python` and `[tool.black] target-version`), and the Dockerfile base image (`ubi9/python-3XX`). The `test_python_toolchain_versions_in_sync` test enforces the non-Dockerfile fields. Version bumps also require the corresponding Red Hat UBI base image to exist in the registry — this is the primary gate for Python upgrades.
 
+## Single-file verification
+
+```bash
+pipenv run pylint verify_rpms/rpm_verifier.py
+pipenv run mypy verify_rpms/rpm_verifier.py
+```
+
 ## Validation expectations
 - Always run targeted tests for changed modules.
 - Run broader `pipenv run pytest tests` when changes cross modules.
