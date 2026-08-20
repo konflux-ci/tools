@@ -84,6 +84,7 @@
       "groupName": "python-version",
       "matchFileNames": [".python-version"],
       "matchDatasources": ["python-version"],
+      "enabled": false,
       "automerge": false,
       "autoApprove": false
     },
