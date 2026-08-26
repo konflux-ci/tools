@@ -38,7 +38,13 @@ TRANSIENT_PATTERNS = [
 # See https://github.com/containers/olot
 OLOT_ANNOTATION_PREFIX = "olot.layer.content."
 # No leading slash — matched against lstrip("/") paths in get_rpmdb_layer_indices.
-RPM_DB_PATHS = ("var/lib/rpm",)
+# RHEL 10+ moved the RPM database to /usr/lib/sysimage/rpm; the legacy
+# /var/lib/rpm is typically a symlink that `oc image extract` does not follow.
+RPM_DB_PATHS = ("var/lib/rpm", "usr/lib/sysimage/rpm")
+
+# Absolute extraction paths tried in order by get_rpmdb(). The first path
+# that yields actual database files wins.
+_EXTRACT_PATHS = ("/var/lib/rpm/", "/usr/lib/sysimage/rpm/")
 
 
 def _is_transient_error(exception: BaseException) -> bool:
@@ -92,6 +98,23 @@ class ProcessedImage:
     output: str = ""
 
 
+def _has_rpmdb_files(directory: Path) -> bool:
+    """Check whether a directory contains actual RPM database files.
+
+    Returns False for empty directories or directories that only contain
+    a symlink (e.g. when ``oc image extract`` copies a symlink instead of
+    following it to the real database location).
+    """
+    if not directory.exists():
+        return False
+    for child in directory.iterdir():
+        if child.is_symlink():
+            continue
+        if child.is_file() or child.is_dir():
+            return True
+    return False
+
+
 @_retry_on_transient
 def get_rpmdb(
     container_image: str,
@@ -100,7 +123,14 @@ def get_rpmdb(
     layer_selectors: list[str] | None = None,
 ) -> Path:
     """
-    Extract RPM DB from a given container image reference
+    Extract RPM DB from a given container image reference.
+
+    Tries each path in ``_EXTRACT_PATHS`` in order.  RHEL 10+ stores the
+    database at ``/usr/lib/sysimage/rpm`` while older releases use the
+    legacy ``/var/lib/rpm``.  ``oc image extract`` does not follow
+    symlinks, so the legacy path may yield only a dangling symlink on
+    RHEL 10 images.
+
     :param container_image: the image to extract
     :param target_dir: the directory to extract the DB to
     :param runner: subprocess.run to run CLI commands
@@ -111,19 +141,24 @@ def get_rpmdb(
         image_args = [f"{container_image}{s}" for s in layer_selectors]
     else:
         image_args = [container_image]
-    runner(
-        [
-            "oc",
-            "image",
-            "extract",
-            *image_args,
-            "--path",
-            f"/var/lib/rpm/:{target_dir}",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+
+    for db_path in _EXTRACT_PATHS:
+        runner(
+            [
+                "oc",
+                "image",
+                "extract",
+                *image_args,
+                "--path",
+                f"{db_path}:{target_dir}",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if _has_rpmdb_files(target_dir):
+            return target_dir
+
     return target_dir
 
 

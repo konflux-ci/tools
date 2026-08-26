@@ -18,6 +18,7 @@ from verify_rpms.rpm_verifier import (
     ImageProcessor,
     ProcessedImage,
     _format_run_summary,
+    _has_rpmdb_files,
     _is_transient_error,
     aggregate_results,
     compute_layer_selectors,
@@ -112,10 +113,22 @@ REGULAR_MANIFEST: dict[str, Any] = {
 }
 
 
-def test_get_rpmdb(tmp_path: Path) -> None:
-    """Test get_rpmdb without layer selector"""
-    image = "my-image"
+def _make_runner_that_creates_db(target_dir: Path) -> MagicMock:
+    """Return a mock runner that creates a dummy rpmdb file in target_dir on first call."""
     mock_runner = create_autospec(run)
+
+    def _side_effect(*_args: Any, **_kwargs: Any) -> MagicMock:
+        (target_dir / "rpmdb.sqlite").touch()
+        return MagicMock()
+
+    mock_runner.side_effect = _side_effect
+    return mock_runner
+
+
+def test_get_rpmdb(tmp_path: Path) -> None:
+    """Test get_rpmdb finds DB at legacy /var/lib/rpm/ path"""
+    image = "my-image"
+    mock_runner = _make_runner_that_creates_db(tmp_path)
     out = get_rpmdb(
         container_image=image,
         target_dir=tmp_path,
@@ -136,7 +149,7 @@ def test_get_rpmdb(tmp_path: Path) -> None:
 def test_get_rpmdb_with_layer_selector(tmp_path: Path) -> None:
     """Test get_rpmdb with layer selectors"""
     image = "my-image@sha256:abc123"
-    mock_runner = create_autospec(run)
+    mock_runner = _make_runner_that_creates_db(tmp_path)
     out = get_rpmdb(
         container_image=image,
         target_dir=tmp_path,
@@ -158,7 +171,7 @@ def test_get_rpmdb_with_layer_selector(tmp_path: Path) -> None:
 def test_get_rpmdb_with_multiple_layer_selectors(tmp_path: Path) -> None:
     """Test get_rpmdb with multiple layer selectors produces multiple image args"""
     image = "my-image@sha256:abc123"
-    mock_runner = create_autospec(run)
+    mock_runner = _make_runner_that_creates_db(tmp_path)
     out = get_rpmdb(
         container_image=image,
         target_dir=tmp_path,
@@ -177,6 +190,74 @@ def test_get_rpmdb_with_multiple_layer_selectors(tmp_path: Path) -> None:
         f"/var/lib/rpm/:{tmp_path}",
     ]
     assert out == tmp_path
+
+
+def test_get_rpmdb_fallback_to_rhel10_path(tmp_path: Path) -> None:
+    """Test get_rpmdb falls back to /usr/lib/sysimage/rpm/ when legacy path is empty.
+
+    Simulates RHEL 10 where /var/lib/rpm is a symlink that oc image extract
+    does not follow, so the first extraction yields no real files.
+    """
+    image = "my-rhel10-image"
+    call_count = 0
+
+    def _side_effect(*_args: Any, **_kwargs: Any) -> MagicMock:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            (tmp_path / "rpmdb.sqlite").touch()
+        return MagicMock()
+
+    mock_runner = create_autospec(run)
+    mock_runner.side_effect = _side_effect
+
+    out = get_rpmdb(
+        container_image=image,
+        target_dir=tmp_path,
+        runner=mock_runner,
+    )
+    assert mock_runner.call_count == 2
+    first_call = mock_runner.call_args_list[0].args[0]
+    second_call = mock_runner.call_args_list[1].args[0]
+    assert first_call == [
+        "oc",
+        "image",
+        "extract",
+        "my-rhel10-image",
+        "--path",
+        f"/var/lib/rpm/:{tmp_path}",
+    ]
+    assert second_call == [
+        "oc",
+        "image",
+        "extract",
+        "my-rhel10-image",
+        "--path",
+        f"/usr/lib/sysimage/rpm/:{tmp_path}",
+    ]
+    assert out == tmp_path
+
+
+def test_get_rpmdb_symlink_only_is_not_a_real_db(tmp_path: Path) -> None:
+    """Test that a directory containing only a symlink is not treated as a valid DB."""
+    (tmp_path / "rpm").symlink_to("/usr/lib/sysimage/rpm")
+    assert not _has_rpmdb_files(tmp_path)
+
+
+def test_has_rpmdb_files_with_real_files(tmp_path: Path) -> None:
+    """Test _has_rpmdb_files returns True when real files exist."""
+    (tmp_path / "rpmdb.sqlite").touch()
+    assert _has_rpmdb_files(tmp_path)
+
+
+def test_has_rpmdb_files_empty_dir(tmp_path: Path) -> None:
+    """Test _has_rpmdb_files returns False for an empty directory."""
+    assert not _has_rpmdb_files(tmp_path)
+
+
+def test_has_rpmdb_files_nonexistent(tmp_path: Path) -> None:
+    """Test _has_rpmdb_files returns False for a nonexistent path."""
+    assert not _has_rpmdb_files(tmp_path / "does-not-exist")
 
 
 @pytest.mark.parametrize(
@@ -1808,7 +1889,17 @@ class TestGetRpmdbRetry:
         """Test that transient errors trigger a retry"""
         mock_runner = create_autospec(run)
         transient_error = CalledProcessError(1, "oc", stderr="HTTP 502 Bad Gateway")
-        mock_runner.side_effect = [transient_error, MagicMock()]
+        call_count = 0
+
+        def _side_effect(*_args: Any, **_kwargs: Any) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise transient_error
+            (tmp_path / "rpmdb.sqlite").touch()
+            return MagicMock()
+
+        mock_runner.side_effect = _side_effect
 
         result = get_rpmdb(
             container_image="my-image",
