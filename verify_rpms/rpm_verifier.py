@@ -4,6 +4,7 @@
 
 import json
 import sys
+import tarfile
 import tempfile
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -37,14 +38,18 @@ TRANSIENT_PATTERNS = [
 # OLOT (OCI Layers On Top) adds model-data layers to container images.
 # See https://github.com/containers/olot
 OLOT_ANNOTATION_PREFIX = "olot.layer.content."
-# No leading slash — matched against lstrip("/") paths in get_rpmdb_layer_indices.
-# RHEL 10+ moved the RPM database to /usr/lib/sysimage/rpm; the legacy
-# /var/lib/rpm is typically a symlink that `oc image extract` does not follow.
-RPM_DB_PATHS = ("var/lib/rpm", "usr/lib/sysimage/rpm")
 
-# Absolute extraction paths tried in order by get_rpmdb(). The first path
-# that yields actual database files wins.
-_EXTRACT_PATHS = ("/var/lib/rpm/", "/usr/lib/sysimage/rpm/")
+# No leading slash — matched against lstrip("/") paths in get_rpmdb_layer_indices.
+# All known RPM DB directory paths across RHEL/Fedora/OSTree variants.
+RPM_DB_PATHS = ("var/lib/rpm", "usr/lib/sysimage/rpm", "usr/share/rpm")
+
+# Subset of RPM_DB_PATHS safe for ``oc image extract --path``.
+# Excludes usr/share/rpm because OSTree images hardlink those files to
+# /sysroot/ostree/repo/objects/ — ``oc image extract`` cannot resolve
+# cross-path hardlinks and fails.
+_OC_EXTRACT_DB_PATHS = ("var/lib/rpm", "usr/lib/sysimage/rpm")
+
+_RPMDB_FILENAMES = frozenset({"rpmdb.sqlite", "Packages", "Packages.db"})
 
 
 def _is_transient_error(exception: BaseException) -> bool:
@@ -115,6 +120,105 @@ def _has_rpmdb_files(directory: Path) -> bool:
     return False
 
 
+def _rpmdb_tar_members() -> frozenset[str]:
+    """Return all normalized tar member paths that could be RPM DB files."""
+    paths: set[str] = set()
+    for db_path in RPM_DB_PATHS:
+        for fname in _RPMDB_FILENAMES:
+            paths.add(f"{db_path}/{fname}")
+    return frozenset(paths)
+
+
+@_retry_on_transient
+def _copy_image_oci(
+    container_image: str,
+    oci_dir: Path,
+    runner: Callable = run,
+) -> None:
+    """Copy a container image to a local OCI layout directory."""
+    runner(
+        ["skopeo", "copy", f"docker://{container_image}", f"oci:{oci_dir}:latest"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
+def _scan_layer_for_rpmdb(
+    blob_path: Path,
+    search_paths: frozenset[str],
+    rpmdb_dir: Path,
+) -> Path | None:
+    """Scan a single layer tarball for RPM DB files.
+
+    Handles hardlinks by resolving them to their target members within
+    the same tar archive — this is the key capability that
+    ``oc image extract`` lacks for OSTree images.
+    """
+    try:
+        with tarfile.open(str(blob_path), "r:*") as tar:
+            for member in tar.getmembers():
+                name = member.name.lstrip("./")
+                if name not in search_paths:
+                    continue
+                try:
+                    fileobj = tar.extractfile(member)
+                except (tarfile.StreamError, KeyError):
+                    continue
+                if fileobj is not None:
+                    dest = rpmdb_dir / Path(name).name
+                    dest.write_bytes(fileobj.read())
+                    return rpmdb_dir
+    except (tarfile.TarError, OSError) as exc:
+        print(
+            f"WARNING: Failed to scan layer blob {blob_path.name[:12]}: {exc}",
+            file=sys.stderr,
+        )
+    return None
+
+
+def _extract_rpmdb_from_layers(
+    container_image: str,
+    target_dir: Path,
+    runner: Callable = run,
+) -> Path | None:
+    """Scan OCI layer tarballs to find and extract the RPM database.
+
+    Used as a fallback when ``oc image extract`` cannot locate the DB
+    (e.g. OSTree images where files are hardlinked to content-addressed
+    objects that ``oc`` cannot resolve with path-filtered extraction).
+
+    :param container_image: the image reference to scan
+    :param target_dir: parent directory for the extraction
+    :param runner: subprocess.run to run CLI commands
+    :return: Path to directory containing extracted DB, or None
+    """
+    oci_dir = target_dir / "_oci"
+    oci_dir.mkdir(exist_ok=True)
+
+    _copy_image_oci(container_image, oci_dir, runner)
+
+    index = json.loads((oci_dir / "index.json").read_text())
+    manifest_digest = index["manifests"][0]["digest"]
+    algo, hex_digest = manifest_digest.split(":", 1)
+    manifest = json.loads((oci_dir / "blobs" / algo / hex_digest).read_text())
+
+    search_paths = _rpmdb_tar_members()
+    rpmdb_dir = target_dir / "_rpmdb"
+    rpmdb_dir.mkdir(exist_ok=True)
+
+    for layer in reversed(manifest.get("layers", [])):
+        algo, hex_digest = layer["digest"].split(":", 1)
+        blob_path = oci_dir / "blobs" / algo / hex_digest
+        if not blob_path.exists():
+            continue
+        result = _scan_layer_for_rpmdb(blob_path, search_paths, rpmdb_dir)
+        if result is not None:
+            return result
+
+    return None
+
+
 @_retry_on_transient
 def get_rpmdb(
     container_image: str,
@@ -125,11 +229,14 @@ def get_rpmdb(
     """
     Extract RPM DB from a given container image reference.
 
-    Tries each path in ``_EXTRACT_PATHS`` in order.  RHEL 10+ stores the
-    database at ``/usr/lib/sysimage/rpm`` while older releases use the
-    legacy ``/var/lib/rpm``.  ``oc image extract`` does not follow
-    symlinks, so the legacy path may yield only a dangling symlink on
-    RHEL 10 images.
+    Uses a single ``oc image extract`` call with multiple ``--path``
+    flags to check both the legacy ``/var/lib/rpm`` and RHEL 10+
+    ``/usr/lib/sysimage/rpm`` in one pass (one blob download).
+
+    If neither path yields database files (e.g. OSTree images where the
+    DB is at ``/usr/share/rpm`` behind hardlinks), falls back to
+    downloading the image via ``skopeo`` and scanning layer tarballs
+    directly with Python's ``tarfile`` module.
 
     :param container_image: the image to extract
     :param target_dir: the directory to extract the DB to
@@ -142,23 +249,39 @@ def get_rpmdb(
     else:
         image_args = [container_image]
 
-    for db_path in _EXTRACT_PATHS:
-        runner(
-            [
-                "oc",
-                "image",
-                "extract",
-                *image_args,
-                "--path",
-                f"{db_path}:{target_dir}",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        if _has_rpmdb_files(target_dir):
-            return target_dir
+    subdirs: dict[str, Path] = {}
+    path_args: list[str] = []
+    for db_path in _OC_EXTRACT_DB_PATHS:
+        safe_name = db_path.replace("/", "_")
+        subdir = target_dir / safe_name
+        subdir.mkdir(exist_ok=True)
+        subdirs[db_path] = subdir
+        path_args.extend(["--path", f"/{db_path}/:{subdir}"])
 
+    runner(
+        ["oc", "image", "extract", *image_args, *path_args],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    for db_path in _OC_EXTRACT_DB_PATHS:
+        if _has_rpmdb_files(subdirs[db_path]):
+            return subdirs[db_path]
+
+    print(
+        f"WARNING: No RPM DB found via oc image extract for {container_image}, "
+        "attempting direct layer scan",
+        file=sys.stderr,
+    )
+    fallback = _extract_rpmdb_from_layers(container_image, target_dir, runner)
+    if fallback is not None:
+        return fallback
+
+    print(
+        f"WARNING: No RPM DB found in any known location for {container_image}",
+        file=sys.stderr,
+    )
     return target_dir
 
 
