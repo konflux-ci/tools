@@ -67,7 +67,7 @@
       "description": "Auto-merge container base image digest updates",
       "matchUpdateTypes": ["digest"],
       "matchPackagePatterns": [
-        "^quay.io/konflux-ci/buildah-task",
+        "^quay.io/konflux-ci/task-runner",
         "^registry.access.redhat.com/ubi9/"
       ],
       "automerge": true,
