@@ -19,6 +19,7 @@ from verify_rpms.rpm_verifier import (
     ProcessedImage,
     _format_run_summary,
     _is_transient_error,
+    _rpmdb_extracted,
     aggregate_results,
     compute_layer_selectors,
     generate_image_output,
@@ -116,6 +117,12 @@ def test_get_rpmdb(tmp_path: Path) -> None:
     """Test get_rpmdb without layer selector"""
     image = "my-image"
     mock_runner = create_autospec(run)
+
+    def _create_db(*args, **kwargs):
+        (tmp_path / "Packages").touch()
+        return MagicMock()
+
+    mock_runner.side_effect = _create_db
     out = get_rpmdb(
         container_image=image,
         target_dir=tmp_path,
@@ -137,6 +144,12 @@ def test_get_rpmdb_with_layer_selector(tmp_path: Path) -> None:
     """Test get_rpmdb with layer selectors"""
     image = "my-image@sha256:abc123"
     mock_runner = create_autospec(run)
+
+    def _create_db(*args, **kwargs):
+        (tmp_path / "Packages").touch()
+        return MagicMock()
+
+    mock_runner.side_effect = _create_db
     out = get_rpmdb(
         container_image=image,
         target_dir=tmp_path,
@@ -159,6 +172,12 @@ def test_get_rpmdb_with_multiple_layer_selectors(tmp_path: Path) -> None:
     """Test get_rpmdb with multiple layer selectors produces multiple image args"""
     image = "my-image@sha256:abc123"
     mock_runner = create_autospec(run)
+
+    def _create_db(*args, **kwargs):
+        (tmp_path / "Packages").touch()
+        return MagicMock()
+
+    mock_runner.side_effect = _create_db
     out = get_rpmdb(
         container_image=image,
         target_dir=tmp_path,
@@ -177,6 +196,96 @@ def test_get_rpmdb_with_multiple_layer_selectors(tmp_path: Path) -> None:
         f"/var/lib/rpm/:{tmp_path}",
     ]
     assert out == tmp_path
+
+
+def test_get_rpmdb_fallback_rhel10(tmp_path: Path) -> None:
+    """When /var/lib/rpm yields no DB files (RHEL 10 symlink), fall back to
+    /usr/lib/sysimage/rpm."""
+    image = "my-image"
+    mock_runner = create_autospec(run)
+    call_count = 0
+
+    def _side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        # Only create DB files on the second call (sysimage path)
+        if call_count == 2:
+            (tmp_path / "rpmdb.sqlite").touch()
+        return MagicMock()
+
+    mock_runner.side_effect = _side_effect
+    out = get_rpmdb(
+        container_image=image,
+        target_dir=tmp_path,
+        runner=mock_runner,
+    )
+    assert mock_runner.call_count == 2
+    assert mock_runner.call_args_list[0].args[0] == [
+        "oc",
+        "image",
+        "extract",
+        "my-image",
+        "--path",
+        f"/var/lib/rpm/:{tmp_path}",
+    ]
+    assert mock_runner.call_args_list[1].args[0] == [
+        "oc",
+        "image",
+        "extract",
+        "my-image",
+        "--path",
+        f"/usr/lib/sysimage/rpm/:{tmp_path}",
+    ]
+    assert out == tmp_path
+
+
+def test_get_rpmdb_fallback_with_layer_selectors(tmp_path: Path) -> None:
+    """RHEL 10 fallback also works when layer selectors are active."""
+    image = "my-image@sha256:abc123"
+    mock_runner = create_autospec(run)
+    call_count = 0
+
+    def _side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            (tmp_path / "rpmdb.sqlite").touch()
+        return MagicMock()
+
+    mock_runner.side_effect = _side_effect
+    out = get_rpmdb(
+        container_image=image,
+        target_dir=tmp_path,
+        runner=mock_runner,
+        layer_selectors=["[0]"],
+    )
+    assert mock_runner.call_count == 2
+    assert mock_runner.call_args_list[1].args[0] == [
+        "oc",
+        "image",
+        "extract",
+        "my-image@sha256:abc123[0]",
+        "--path",
+        f"/usr/lib/sysimage/rpm/:{tmp_path}",
+    ]
+    assert out == tmp_path
+
+
+def test_rpmdb_extracted_empty_dir(tmp_path: Path) -> None:
+    """_rpmdb_extracted returns False for an empty directory."""
+    assert _rpmdb_extracted(tmp_path) is False
+
+
+def test_rpmdb_extracted_with_regular_file(tmp_path: Path) -> None:
+    """_rpmdb_extracted returns True when a regular file exists."""
+    (tmp_path / "Packages").touch()
+    assert _rpmdb_extracted(tmp_path) is True
+
+
+def test_rpmdb_extracted_dangling_symlink(tmp_path: Path) -> None:
+    """_rpmdb_extracted returns False when only a dangling symlink exists."""
+    (tmp_path / "rpm").symlink_to("/usr/lib/sysimage/rpm")
+    assert _rpmdb_extracted(tmp_path) is False
 
 
 @pytest.mark.parametrize(
@@ -1808,7 +1917,17 @@ class TestGetRpmdbRetry:
         """Test that transient errors trigger a retry"""
         mock_runner = create_autospec(run)
         transient_error = CalledProcessError(1, "oc", stderr="HTTP 502 Bad Gateway")
-        mock_runner.side_effect = [transient_error, MagicMock()]
+        call_count = 0
+
+        def _side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise transient_error
+            (tmp_path / "Packages").touch()
+            return MagicMock()
+
+        mock_runner.side_effect = _side_effect
 
         result = get_rpmdb(
             container_image="my-image",
@@ -1909,6 +2028,23 @@ class TestGetRpmdbLayerIndices:
                     "annotations": {
                         "olot.layer.content.inlayerpath": "/var/lib/rpm",
                         "olot.layer.content.type": "directory",
+                    },
+                },
+            ]
+        }
+        result = get_rpmdb_layer_indices(manifest)
+        assert result == [0]
+
+    def test_olot_layer_with_sysimage_rpm_path_is_kept(self) -> None:
+        """Test that an olot layer pointing to /usr/lib/sysimage/rpm is kept"""
+        manifest: dict[str, Any] = {
+            "layers": [
+                {
+                    "mediaType": "application/vnd.oci.image.layer.v1.tar",
+                    "size": 100,
+                    "digest": "sha256:rpmlayer",
+                    "annotations": {
+                        "olot.layer.content.inlayerpath": "/usr/lib/sysimage/rpm/db.sqlite",
                     },
                 },
             ]
