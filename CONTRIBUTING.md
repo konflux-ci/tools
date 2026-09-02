@@ -4,6 +4,10 @@
 * Python 3.12 (see `.python-version`)
 * pipenv (see `.pipenv-version`; must match `PIN_PIPENV_VERSION` in the Dockerfile)
 
+## Go local development prerequisites
+* Go 1.26+ (see `go.mod`)
+* Dependencies are fetched automatically by the Go toolchain
+
 ## Working with the container image
 
 ### To build this repo into a container:
