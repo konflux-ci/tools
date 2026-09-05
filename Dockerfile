@@ -1,4 +1,4 @@
-FROM quay.io/konflux-ci/buildah-task:latest@sha256:4c470b5a153c4acd14bf4f8731b5e36c61d7faafe09c2bf376bb81ce84aa5709 AS buildah-task-image
+FROM quay.io/konflux-ci/task-runner@sha256:c34c933c269e2401bb042fe69e2999cf288331b6586d4f4eca9c845270d9b1f9 AS task-runner-image
 
 FROM registry.access.redhat.com/ubi9/python-312:1785964036@sha256:9e030f2458759faacb43682ef0c98babd78d1e15b3aeef7b2ccd5a6caf27abe4
 
@@ -21,14 +21,15 @@ AppStudio. The included tools are, for the most part, written in Python." \
 ENV \
     ENABLE_PIPENV=true \
     PIN_PIPENV_VERSION=2023.11.15 \
-    REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+    REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem \
+    RETRY_STOP_IF_STDERR_MATCHES=unauthorized
 
 USER 0
 ADD . /tmp/src
 ADD --chown=root:root --chmod=644 data/ca-trust/* /etc/pki/ca-trust/source/anchors
 RUN /usr/bin/fix-permissions /tmp/src \
     && /usr/bin/update-ca-trust
-RUN yum install -y skopeo jq
+RUN yum install -y skopeo jq bc
 ARG TARGETARCH
 ARG HELM_VERSION=v3.21.4
 RUN case "${TARGETARCH}" in \
@@ -42,7 +43,7 @@ RUN case "${TARGETARCH}" in \
     && tar -xzf /tmp/helm.tar.gz --strip-components=1 -C /usr/local/bin "linux-${HELM_ARCH}/helm" \
     && rm /tmp/helm.tar.gz /tmp/helm.tar.gz.sha256 \
     && helm version
-COPY --from=buildah-task-image /usr/bin/retry /usr/bin/
+COPY --from=task-runner-image /usr/local/bin/retry /usr/bin/
 
 USER 1001
 
