@@ -5,6 +5,8 @@ Repo guidance for AI/code agents working in `konflux-ci/tools`.
 
 ## Repo map
 - `verify_rpms/`: RPM verification logic and CLI.
+- `cmd/helm-chart-oci/`: Go CLI for packaging and pushing Helm charts to OCI.
+- `internal/helmchartoci/`: Go libraries backing `helm-chart-oci`.
 - `tests/`: pytest coverage for all tool modules.
 - `.tekton/`: Pipeline-as-Code definitions used in Konflux.
 
@@ -12,6 +14,7 @@ Repo guidance for AI/code agents working in `konflux-ci/tools`.
 - Python: use `pipenv` (see `Pipfile`, `Pipfile.lock`, and `.python-version`).
 - Install deps: `pipenv sync`
 - Run tests: `pipenv run pytest tests`
+- Go: `go test ./...`, `go build ./cmd/helm-chart-oci`, and `gofmt -w cmd internal` before commit (CI enforces `gofmt`); Helm **v4** SDK, chart-format **v2** only; tests use Ginkgo/Gomega
 - Format/lint helper: `./format.sh`
 
 ## Working conventions
@@ -29,6 +32,7 @@ Repo guidance for AI/code agents working in `konflux-ci/tools`.
 ## Validation expectations
 - Always run targeted tests for changed modules.
 - Run broader `pipenv run pytest tests` when changes cross modules.
+- For Go changes, run `gofmt -w cmd internal` (or `gofmt -l cmd internal` to check only).
 - If changing dependency or packaging config, include a short rationale in PR notes.
 
 ## Single-file verification

@@ -1,3 +1,12 @@
+FROM registry.access.redhat.com/ubi10/go-toolset:10.1-1773232567@sha256:81f0a8604f87b126a077cd55055fd5cc2b7b6536b3176171001b4dd47c322dfd AS go-builder
+
+WORKDIR /workspace
+COPY go.mod go.sum ./
+COPY cmd/ cmd/
+COPY internal/ internal/
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o /tmp/helm-chart-oci ./cmd/helm-chart-oci
+
 FROM quay.io/konflux-ci/buildah-task:latest@sha256:4c470b5a153c4acd14bf4f8731b5e36c61d7faafe09c2bf376bb81ce84aa5709 AS buildah-task-image
 
 FROM registry.access.redhat.com/ubi9/python-312:1785964036@sha256:9e030f2458759faacb43682ef0c98babd78d1e15b3aeef7b2ccd5a6caf27abe4
@@ -9,7 +18,7 @@ LABEL \
     io.k8s.display-name="Tools for Red Hat AppStudio" \
     io.openshift.tags="appstudio" \
     summary="This image contains various tools that are used within Red Hat \
-AppStudio. The included tools are, for the most part, written in Python." \
+AppStudio. The included tools are written in Python and Go." \
     com.redhat.component="konflux-ci-tools-container" \
     version="1.0" \
     release="1" \
@@ -43,6 +52,7 @@ RUN case "${TARGETARCH}" in \
     && rm /tmp/helm.tar.gz /tmp/helm.tar.gz.sha256 \
     && helm version
 COPY --from=buildah-task-image /usr/bin/retry /usr/bin/
+COPY --from=go-builder /tmp/helm-chart-oci /opt/app-root/bin/helm-chart-oci
 
 USER 1001
 
