@@ -31,6 +31,20 @@ Repo guidance for AI/code agents working in `konflux-ci/tools`.
 - Run broader `pipenv run pytest tests` when changes cross modules.
 - If changing dependency or packaging config, include a short rationale in PR notes.
 
+## Single-file verification
+
+After a small Python change, lint and type-check the **file you edited**.
+
+1. Run `pipenv sync` if the environment is missing.
+2. Run `pipenv run pylint <file>` and `pipenv run mypy <file>`.
+
+Example (replace the path with the file you changed):
+
+```bash
+pipenv run pylint verify_rpms/rpm_verifier.py
+pipenv run mypy verify_rpms/rpm_verifier.py
+```
+
 ## Safety checks before finishing
 - No secrets or credentials added.
 - No unrelated refactors bundled with the fix.
