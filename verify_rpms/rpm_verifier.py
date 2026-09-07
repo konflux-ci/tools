@@ -38,7 +38,20 @@ TRANSIENT_PATTERNS = [
 # See https://github.com/containers/olot
 OLOT_ANNOTATION_PREFIX = "olot.layer.content."
 # No leading slash — matched against lstrip("/") paths in get_rpmdb_layer_indices.
-RPM_DB_PATHS = ("var/lib/rpm",)
+# RHEL 10+ moved the RPM database to /usr/lib/sysimage/rpm; the old path is a
+# symlink that `oc image extract` does not follow, so both must be listed.
+RPM_DB_PATHS = ("var/lib/rpm", "usr/lib/sysimage/rpm")
+
+
+def _rpmdb_extracted(target_dir: Path) -> bool:
+    """Return True when *target_dir* contains at least one regular file.
+
+    After ``oc image extract``, the directory may be empty (path missing
+    in the image) or contain only a dangling symlink (RHEL 10, where
+    ``/var/lib/rpm`` is a symlink ``oc`` does not follow).  Either case
+    means no usable RPM database was extracted.
+    """
+    return any(f.is_file() for f in target_dir.iterdir())
 
 
 def _is_transient_error(exception: BaseException) -> bool:
@@ -100,7 +113,13 @@ def get_rpmdb(
     layer_selectors: list[str] | None = None,
 ) -> Path:
     """
-    Extract RPM DB from a given container image reference
+    Extract RPM DB from a given container image reference.
+
+    Tries each path in ``RPM_DB_PATHS`` in order and returns as soon as
+    one yields database files.  This handles RHEL 10+, where
+    ``/var/lib/rpm`` is a symlink that ``oc image extract`` does not
+    follow; the real database lives under ``/usr/lib/sysimage/rpm``.
+
     :param container_image: the image to extract
     :param target_dir: the directory to extract the DB to
     :param runner: subprocess.run to run CLI commands
@@ -111,19 +130,22 @@ def get_rpmdb(
         image_args = [f"{container_image}{s}" for s in layer_selectors]
     else:
         image_args = [container_image]
-    runner(
-        [
-            "oc",
-            "image",
-            "extract",
-            *image_args,
-            "--path",
-            f"/var/lib/rpm/:{target_dir}",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    for db_path in RPM_DB_PATHS:
+        runner(
+            [
+                "oc",
+                "image",
+                "extract",
+                *image_args,
+                "--path",
+                f"/{db_path}/:{target_dir}",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if _rpmdb_extracted(target_dir):
+            return target_dir
     return target_dir
 
 
