@@ -24,10 +24,13 @@ from verify_rpms.rpm_verifier import (
     _extract_rpmdb_from_layers,
     _format_run_summary,
     _has_rpmdb_files,
+    _inspect_image_labels,
+    _is_ostree_image,
     _is_transient_error,
     _rpmdb_tar_members,
     _scan_layer_for_rpmdb,
     aggregate_results,
+    detect_ostree_images,
     compute_layer_selectors,
     generate_image_output,
     generate_image_results,
@@ -442,6 +445,118 @@ def test_get_rpmdb_no_db_anywhere(tmp_path: Path, monkeypatch: MonkeyPatch) -> N
         runner=mock_runner,
     )
     assert result == tmp_path
+
+
+def test_get_rpmdb_ostree_skips_oc(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    """Test that ostree=True skips oc image extract and goes to tarfile scanner."""
+    mock_runner = create_autospec(run)
+
+    fallback_dir = tmp_path / "_rpmdb"
+    fallback_dir.mkdir()
+    (fallback_dir / "rpmdb.sqlite").write_bytes(b"ostree-db")
+
+    mock_extract = MagicMock(return_value=fallback_dir)
+    monkeypatch.setattr(rpm_verifier, "_extract_rpmdb_from_layers", mock_extract)
+
+    result = get_rpmdb(
+        container_image="my-ostree-image",
+        target_dir=tmp_path,
+        runner=mock_runner,
+        ostree=True,
+    )
+    mock_runner.assert_not_called()
+    mock_extract.assert_called_once_with("my-ostree-image", tmp_path, mock_runner)
+    assert result == fallback_dir
+
+
+def test_get_rpmdb_ostree_no_db(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    """Test ostree=True returns target_dir when tarfile scanner finds nothing."""
+    mock_runner = create_autospec(run)
+    mock_extract = MagicMock(return_value=None)
+    monkeypatch.setattr(rpm_verifier, "_extract_rpmdb_from_layers", mock_extract)
+
+    result = get_rpmdb(
+        container_image="my-ostree-image",
+        target_dir=tmp_path,
+        runner=mock_runner,
+        ostree=True,
+    )
+    mock_runner.assert_not_called()
+    assert result == tmp_path
+
+
+# ============================================================
+# OSTree label detection tests
+# ============================================================
+
+
+@pytest.mark.parametrize(
+    ("labels", "expected"),
+    [
+        pytest.param({"ostree.bootable": "true"}, True, id="true-lowercase"),
+        pytest.param({"ostree.bootable": "True"}, True, id="true-titlecase"),
+        pytest.param({"ostree.bootable": "TRUE"}, True, id="true-uppercase"),
+        pytest.param({"ostree.bootable": "1"}, True, id="one"),
+        pytest.param({"ostree.bootable": "false"}, False, id="false"),
+        pytest.param({"ostree.bootable": ""}, False, id="empty"),
+        pytest.param({}, False, id="missing"),
+        pytest.param({"other.label": "true"}, False, id="wrong-label"),
+    ],
+)
+def test_is_ostree_image(labels: dict[str, str], expected: bool) -> None:
+    """Test _is_ostree_image label detection."""
+    assert _is_ostree_image(labels) == expected
+
+
+def test_inspect_image_labels() -> None:
+    """Test _inspect_image_labels calls skopeo inspect (non-raw)."""
+    mock_runner = create_autospec(run)
+    mock_runner.return_value.stdout = json.dumps(
+        {"Labels": {"ostree.bootable": "true", "version": "10"}}
+    )
+    result = _inspect_image_labels("registry/repo@sha256:abc", runner=mock_runner)
+    mock_runner.assert_called_once()
+    cmd = mock_runner.call_args.args[0]
+    assert cmd == ["skopeo", "inspect", "docker://registry/repo@sha256:abc"]
+    assert "--raw" not in cmd
+    assert result == {"ostree.bootable": "true", "version": "10"}
+
+
+def test_inspect_image_labels_no_labels() -> None:
+    """Test _inspect_image_labels handles missing Labels field."""
+    mock_runner = create_autospec(run)
+    mock_runner.return_value.stdout = json.dumps({"Name": "test"})
+    result = _inspect_image_labels("registry/repo@sha256:abc", runner=mock_runner)
+    assert result == {}
+
+
+def test_detect_ostree_images() -> None:
+    """Test detect_ostree_images identifies OSTree images."""
+    mock_runner = create_autospec(run)
+
+    def _side_effect(*args: Any, **_kwargs: Any) -> MagicMock:
+        img_arg = args[0][2]
+        result = MagicMock()
+        if "ostree" in img_arg:
+            result.stdout = json.dumps({"Labels": {"ostree.bootable": "true"}})
+        else:
+            result.stdout = json.dumps({"Labels": {"version": "9"}})
+        return result
+
+    mock_runner.side_effect = _side_effect
+    result = detect_ostree_images(
+        ["registry/ostree@sha256:a", "registry/standard@sha256:b"],
+        runner=mock_runner,
+    )
+    assert result == {"registry/ostree@sha256:a"}
+
+
+def test_detect_ostree_images_inspect_failure() -> None:
+    """Test detect_ostree_images skips images that fail inspection."""
+    mock_runner = create_autospec(run)
+    mock_runner.side_effect = CalledProcessError(1, "skopeo", stderr="error")
+    result = detect_ostree_images(["registry/repo@sha256:a"], runner=mock_runner)
+    assert result == set()
 
 
 @pytest.mark.parametrize(
@@ -1764,6 +1879,7 @@ class TestMain:
             target_dir=target_dir,
             runner=run,
             layer_selectors=expected_selectors,
+            ostree=False,
         )
 
     def test_db_getter_closure_passes_none_for_unknown_image(
@@ -1813,6 +1929,7 @@ class TestMain:
             target_dir=target_dir,
             runner=run,
             layer_selectors=None,
+            ostree=False,
         )
 
     def test_main_image_index_with_modelcar_selectors(
@@ -1876,6 +1993,7 @@ class TestMain:
                 target_dir=target_dir,
                 runner=run,
                 layer_selectors=["[0]"],
+                ostree=False,
             )
 
     def test_prefetch_single_image_manifest(
