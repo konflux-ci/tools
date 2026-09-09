@@ -2,3 +2,5 @@
 __pycache__/
 build/
 uv.lock
+# Helm chart packages from local dev / ad-hoc testing (not repo fixtures)
+*.tgz
