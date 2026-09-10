@@ -30,7 +30,8 @@
         "pylint",
         "isort",
         "pytest",
-        "pylint-pytest"
+        "pylint-pytest",
+        "pytest-cov"
       ],
       "matchDatasources": ["pypi"],
       "matchUpdateTypes": ["patch", "minor"],
