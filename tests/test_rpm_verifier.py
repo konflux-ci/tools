@@ -409,41 +409,40 @@ def test_extract_rpmdb_from_layers_no_db(tmp_path: Path) -> None:
     assert result is None
 
 
-def test_get_rpmdb_ostree_fallback(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
-    """Test get_rpmdb falls back to tarfile scanning for OSTree images."""
+def test_extract_rpmdb_from_layers_malformed_oci(tmp_path: Path) -> None:
+    """Test _extract_rpmdb_from_layers handles malformed OCI layout gracefully."""
+    oci_dir = tmp_path / "_oci"
+    oci_dir.mkdir()
+    (oci_dir / "index.json").write_text("not valid json")
+
+    mock_runner = create_autospec(run)
+
+    result = _extract_rpmdb_from_layers("my-broken-image", tmp_path, mock_runner)
+    assert result is None
+
+
+def test_extract_rpmdb_from_layers_missing_index(tmp_path: Path) -> None:
+    """Test _extract_rpmdb_from_layers handles missing index.json gracefully."""
+    oci_dir = tmp_path / "_oci"
+    oci_dir.mkdir()
+
+    mock_runner = create_autospec(run)
+
+    result = _extract_rpmdb_from_layers("my-broken-image", tmp_path, mock_runner)
+    assert result is None
+
+
+def test_get_rpmdb_no_db_returns_target_dir(tmp_path: Path) -> None:
+    """Test get_rpmdb returns target_dir when oc finds nothing (no tarfile fallback)."""
     mock_runner = create_autospec(run)
     mock_runner.return_value = MagicMock()
-
-    fallback_dir = tmp_path / "_rpmdb"
-    fallback_dir.mkdir()
-    (fallback_dir / "rpmdb.sqlite").write_bytes(b"ostree-db")
-
-    mock_extract = MagicMock(return_value=fallback_dir)
-    monkeypatch.setattr(rpm_verifier, "_extract_rpmdb_from_layers", mock_extract)
-
-    result = get_rpmdb(
-        container_image="my-ostree-image",
-        target_dir=tmp_path,
-        runner=mock_runner,
-    )
-    mock_runner.assert_called_once()
-    mock_extract.assert_called_once_with("my-ostree-image", tmp_path, mock_runner)
-    assert result == fallback_dir
-
-
-def test_get_rpmdb_no_db_anywhere(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
-    """Test get_rpmdb returns target_dir with warning when no DB found anywhere."""
-    mock_runner = create_autospec(run)
-    mock_runner.return_value = MagicMock()
-
-    mock_extract = MagicMock(return_value=None)
-    monkeypatch.setattr(rpm_verifier, "_extract_rpmdb_from_layers", mock_extract)
 
     result = get_rpmdb(
         container_image="my-empty-image",
         target_dir=tmp_path,
         runner=mock_runner,
     )
+    mock_runner.assert_called_once()
     assert result == tmp_path
 
 
@@ -555,6 +554,14 @@ def test_detect_ostree_images_inspect_failure() -> None:
     """Test detect_ostree_images skips images that fail inspection."""
     mock_runner = create_autospec(run)
     mock_runner.side_effect = CalledProcessError(1, "skopeo", stderr="error")
+    result = detect_ostree_images(["registry/repo@sha256:a"], runner=mock_runner)
+    assert result == set()
+
+
+def test_detect_ostree_images_skopeo_not_found() -> None:
+    """Test detect_ostree_images handles missing skopeo binary (OSError)."""
+    mock_runner = create_autospec(run)
+    mock_runner.side_effect = FileNotFoundError("skopeo")
     result = detect_ostree_images(["registry/repo@sha256:a"], runner=mock_runner)
     assert result == set()
 
@@ -1545,6 +1552,16 @@ class TestMain:
         monkeypatch.setattr(rpm_verifier, compute_layer_selectors.__name__, mock)
         return mock
 
+    @pytest.fixture(autouse=True)
+    def mock_detect_ostree_images(self, monkeypatch: MonkeyPatch) -> MagicMock:
+        """Mock detect_ostree_images to return empty set by default."""
+        mock: MagicMock = create_autospec(
+            detect_ostree_images,
+            return_value=set(),
+        )
+        monkeypatch.setattr(rpm_verifier, detect_ostree_images.__name__, mock)
+        return mock
+
     @pytest.fixture()
     def create_set_output_and_status_mock(
         self, monkeypatch: MonkeyPatch
@@ -1930,6 +1947,53 @@ class TestMain:
             runner=run,
             layer_selectors=None,
             ostree=False,
+        )
+
+    def test_db_getter_closure_passes_ostree_true(
+        # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self,
+        mock_image_processor: MagicMock,
+        mock_inspect_image_ref: MagicMock,
+        mock_get_images_from_inspection: MagicMock,
+        mock_detect_ostree_images: MagicMock,
+        create_set_output_and_status_mock: MagicMock,
+        mock_aggregate_results: MagicMock,
+        mock_generate_images_processed_result: MagicMock,
+        monkeypatch: MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Test that the db_getter closure passes ostree=True for OSTree images"""
+        image_ref = "quay.io/test/image@sha256:1234567890"
+        mock_detect_ostree_images.return_value = {image_ref}
+
+        mock_get_rpmdb = create_autospec(get_rpmdb, return_value=tmp_path)
+        monkeypatch.setattr(rpm_verifier, get_rpmdb.__name__, mock_get_rpmdb)
+
+        create_set_output_and_status_mock(with_failures=False)
+
+        rpm_verifier.main(  # pylint: disable=no-value-for-parameter
+            args=[
+                "--image-url",
+                "quay.io/test/image:tag",
+                "--image-digest",
+                "sha256:1234567890",
+                "--workdir",
+                tmp_path,
+            ],
+            obj={},
+            standalone_mode=False,
+        )
+
+        db_getter = mock_image_processor.call_args.kwargs["db_getter"]
+        target_dir = Path("/tmp/test")
+        db_getter(image_ref, target_dir)
+
+        mock_get_rpmdb.assert_called_once_with(
+            container_image=image_ref,
+            target_dir=target_dir,
+            runner=run,
+            layer_selectors=None,
+            ostree=True,
         )
 
     def test_main_image_index_with_modelcar_selectors(

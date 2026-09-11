@@ -129,13 +129,17 @@ def _rpmdb_tar_members() -> frozenset[str]:
     return frozenset(paths)
 
 
-@_retry_on_transient
 def _copy_image_oci(
     container_image: str,
     oci_dir: Path,
     runner: Callable = run,
 ) -> None:
-    """Copy a container image to a local OCI layout directory."""
+    """Copy a container image to a local OCI layout directory.
+
+    Transient errors are handled by the caller's ``@_retry_on_transient``
+    decorator (typically ``get_rpmdb``), so this function is intentionally
+    not decorated to avoid multiplicative retry amplification.
+    """
     runner(
         ["skopeo", "copy", f"docker://{container_image}", f"oci:{oci_dir}:latest"],
         capture_output=True,
@@ -198,10 +202,23 @@ def _extract_rpmdb_from_layers(
 
     _copy_image_oci(container_image, oci_dir, runner)
 
-    index = json.loads((oci_dir / "index.json").read_text())
-    manifest_digest = index["manifests"][0]["digest"]
-    algo, hex_digest = manifest_digest.split(":", 1)
-    manifest = json.loads((oci_dir / "blobs" / algo / hex_digest).read_text())
+    try:
+        index = json.loads((oci_dir / "index.json").read_text())
+        manifest_digest = index["manifests"][0]["digest"]
+        algo, hex_digest = manifest_digest.split(":", 1)
+        manifest = json.loads((oci_dir / "blobs" / algo / hex_digest).read_text())
+    except (
+        KeyError,
+        IndexError,
+        json.JSONDecodeError,
+        FileNotFoundError,
+        OSError,
+    ) as exc:
+        print(
+            f"WARNING: Malformed OCI layout for {container_image}: {exc}",
+            file=sys.stderr,
+        )
+        return None
 
     search_paths = _rpmdb_tar_members()
     rpmdb_dir = target_dir / "_rpmdb"
@@ -228,6 +245,10 @@ def _inspect_image_labels(
 
     Uses ``skopeo inspect`` (non-raw) to read the image configuration
     which includes labels set during the image build.
+
+    :param image_ref: full image reference (e.g. registry/repo@sha256:...)
+    :param runner: subprocess.run to run CLI commands
+    :return: dictionary of image labels
     """
     result = runner(
         ["skopeo", "inspect", f"docker://{image_ref}"],
@@ -259,6 +280,10 @@ def detect_ostree_images(
     Detection is based on the ``ostree.bootable`` image label.  Inspection
     failures are silently skipped (the image will be processed via the
     standard ``oc image extract`` path instead).
+
+    :param images: list of image references to inspect
+    :param runner: subprocess.run to run CLI commands
+    :return: set of image references that are OSTree bootable
     """
     ostree: set[str] = set()
     for img in images:
@@ -274,6 +299,7 @@ def detect_ostree_images(
             CalledProcessError,
             json.JSONDecodeError,
             TypeError,
+            OSError,
         ) as exc:
             print(
                 f"Label inspection skipped for {img}: {exc}",
@@ -301,8 +327,7 @@ def get_rpmdb(
     For standard images the function uses a single ``oc image extract``
     call with multiple ``--path`` flags to check both the legacy
     ``/var/lib/rpm`` and RHEL 10+ ``/usr/lib/sysimage/rpm`` in one
-    pass (one blob download).  If neither path yields database files
-    it falls back to the ``skopeo`` + ``tarfile`` scanner as well.
+    pass (one blob download).
 
     :param container_image: the image to extract
     :param target_dir: the directory to extract the DB to
@@ -353,16 +378,8 @@ def get_rpmdb(
             return subdirs[db_path]
 
     print(
-        f"WARNING: No RPM DB found via oc image extract for {container_image}, "
-        "attempting direct layer scan",
-        file=sys.stderr,
-    )
-    fallback = _extract_rpmdb_from_layers(container_image, target_dir, runner)
-    if fallback is not None:
-        return fallback
-
-    print(
-        f"WARNING: No RPM DB found in any known location for {container_image}",
+        f"WARNING: No RPM DB found via oc image extract for {container_image}. "
+        "If this is an OSTree image, ensure the ostree.bootable label is set.",
         file=sys.stderr,
     )
     return target_dir
