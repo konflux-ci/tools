@@ -1469,7 +1469,7 @@ def test_format_run_summary() -> None:
     )
 
 
-class TestMain:
+class TestMain:  # pylint: disable=too-many-public-methods
     """Testing main"""
 
     @pytest.fixture()
