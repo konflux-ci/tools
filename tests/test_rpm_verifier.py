@@ -2,7 +2,11 @@
 
 # pylint: disable=too-many-lines
 
+import gzip
+import hashlib
 import json
+import tarfile
+from io import BytesIO
 from pathlib import Path
 from subprocess import CalledProcessError, run
 from textwrap import dedent
@@ -17,10 +21,17 @@ from verify_rpms import rpm_verifier
 from verify_rpms.rpm_verifier import (
     ImageProcessor,
     ProcessedImage,
+    _extract_rpmdb_from_layers,
     _format_run_summary,
+    _has_rpmdb_files,
+    _inspect_image_labels,
+    _is_ostree_image,
     _is_transient_error,
+    _rpmdb_tar_members,
+    _scan_layer_for_rpmdb,
     aggregate_results,
     compute_layer_selectors,
+    detect_ostree_images,
     generate_image_output,
     generate_image_results,
     generate_processed_image_digests,
@@ -112,31 +123,48 @@ REGULAR_MANIFEST: dict[str, Any] = {
 }
 
 
-def test_get_rpmdb(tmp_path: Path) -> None:
-    """Test get_rpmdb without layer selector"""
-    image = "my-image"
+def _make_runner_that_creates_db(
+    target_dir: Path, subdir: str = "var_lib_rpm"
+) -> MagicMock:
+    """Return a mock runner that creates a dummy rpmdb file in a subdirectory.
+
+    The ``subdir`` parameter controls which extraction subdirectory gets
+    populated, simulating oc image extract writing DB files to that path.
+    """
     mock_runner = create_autospec(run)
+
+    def _side_effect(*_args: Any, **_kwargs: Any) -> MagicMock:
+        db_dir = target_dir / subdir
+        db_dir.mkdir(exist_ok=True)
+        (db_dir / "rpmdb.sqlite").touch()
+        return MagicMock()
+
+    mock_runner.side_effect = _side_effect
+    return mock_runner
+
+
+def test_get_rpmdb(tmp_path: Path) -> None:
+    """Test get_rpmdb finds DB at legacy path with single multi-path oc call"""
+    image = "my-image"
+    mock_runner = _make_runner_that_creates_db(tmp_path, "var_lib_rpm")
     out = get_rpmdb(
         container_image=image,
         target_dir=tmp_path,
         runner=mock_runner,
     )
     mock_runner.assert_called_once()
-    assert mock_runner.call_args.args[0] == [
-        "oc",
-        "image",
-        "extract",
-        "my-image",
-        "--path",
-        f"/var/lib/rpm/:{tmp_path}",
-    ]
-    assert out == tmp_path
+    cmd = mock_runner.call_args.args[0]
+    assert cmd[0:3] == ["oc", "image", "extract"]
+    assert "my-image" in cmd
+    path_indices = [i for i, arg in enumerate(cmd) if arg == "--path"]
+    assert len(path_indices) == 2
+    assert out == tmp_path / "var_lib_rpm"
 
 
 def test_get_rpmdb_with_layer_selector(tmp_path: Path) -> None:
     """Test get_rpmdb with layer selectors"""
     image = "my-image@sha256:abc123"
-    mock_runner = create_autospec(run)
+    mock_runner = _make_runner_that_creates_db(tmp_path, "var_lib_rpm")
     out = get_rpmdb(
         container_image=image,
         target_dir=tmp_path,
@@ -144,21 +172,15 @@ def test_get_rpmdb_with_layer_selector(tmp_path: Path) -> None:
         layer_selectors=["[0]"],
     )
     mock_runner.assert_called_once()
-    assert mock_runner.call_args.args[0] == [
-        "oc",
-        "image",
-        "extract",
-        "my-image@sha256:abc123[0]",
-        "--path",
-        f"/var/lib/rpm/:{tmp_path}",
-    ]
-    assert out == tmp_path
+    cmd = mock_runner.call_args.args[0]
+    assert "my-image@sha256:abc123[0]" in cmd
+    assert out == tmp_path / "var_lib_rpm"
 
 
 def test_get_rpmdb_with_multiple_layer_selectors(tmp_path: Path) -> None:
     """Test get_rpmdb with multiple layer selectors produces multiple image args"""
     image = "my-image@sha256:abc123"
-    mock_runner = create_autospec(run)
+    mock_runner = _make_runner_that_creates_db(tmp_path, "var_lib_rpm")
     out = get_rpmdb(
         container_image=image,
         target_dir=tmp_path,
@@ -166,17 +188,382 @@ def test_get_rpmdb_with_multiple_layer_selectors(tmp_path: Path) -> None:
         layer_selectors=["[0]", "[3]", "[9]"],
     )
     mock_runner.assert_called_once()
-    assert mock_runner.call_args.args[0] == [
+    cmd = mock_runner.call_args.args[0]
+    assert "my-image@sha256:abc123[0]" in cmd
+    assert "my-image@sha256:abc123[3]" in cmd
+    assert "my-image@sha256:abc123[9]" in cmd
+    assert out == tmp_path / "var_lib_rpm"
+
+
+def test_get_rpmdb_rhel10_sysimage_path(tmp_path: Path) -> None:
+    """Test get_rpmdb returns sysimage subdir when legacy path is empty.
+
+    Simulates RHEL 10 where /var/lib/rpm is a symlink that oc image extract
+    does not follow, so only /usr/lib/sysimage/rpm has real files.
+    Both paths are extracted in a single oc call.
+    """
+    image = "my-rhel10-image"
+    mock_runner = _make_runner_that_creates_db(tmp_path, "usr_lib_sysimage_rpm")
+    out = get_rpmdb(
+        container_image=image,
+        target_dir=tmp_path,
+        runner=mock_runner,
+    )
+    mock_runner.assert_called_once()
+    assert out == tmp_path / "usr_lib_sysimage_rpm"
+
+
+def test_get_rpmdb_multi_path_command_format(tmp_path: Path) -> None:
+    """Verify the exact oc image extract command format with multiple --path flags."""
+    image = "my-image"
+    mock_runner = _make_runner_that_creates_db(tmp_path, "var_lib_rpm")
+    get_rpmdb(
+        container_image=image,
+        target_dir=tmp_path,
+        runner=mock_runner,
+    )
+    cmd = mock_runner.call_args.args[0]
+    legacy_dir = tmp_path / "var_lib_rpm"
+    sysimage_dir = tmp_path / "usr_lib_sysimage_rpm"
+    assert cmd == [
         "oc",
         "image",
         "extract",
-        "my-image@sha256:abc123[0]",
-        "my-image@sha256:abc123[3]",
-        "my-image@sha256:abc123[9]",
+        "my-image",
         "--path",
-        f"/var/lib/rpm/:{tmp_path}",
+        f"/var/lib/rpm/:{legacy_dir}",
+        "--path",
+        f"/usr/lib/sysimage/rpm/:{sysimage_dir}",
     ]
-    assert out == tmp_path
+
+
+def test_get_rpmdb_symlink_only_is_not_a_real_db(tmp_path: Path) -> None:
+    """Test that a directory containing only a symlink is not treated as a valid DB."""
+    (tmp_path / "rpm").symlink_to("/usr/lib/sysimage/rpm")
+    assert not _has_rpmdb_files(tmp_path)
+
+
+def test_has_rpmdb_files_with_real_files(tmp_path: Path) -> None:
+    """Test _has_rpmdb_files returns True when real files exist."""
+    (tmp_path / "rpmdb.sqlite").touch()
+    assert _has_rpmdb_files(tmp_path)
+
+
+def test_has_rpmdb_files_empty_dir(tmp_path: Path) -> None:
+    """Test _has_rpmdb_files returns False for an empty directory."""
+    assert not _has_rpmdb_files(tmp_path)
+
+
+def test_has_rpmdb_files_nonexistent(tmp_path: Path) -> None:
+    """Test _has_rpmdb_files returns False for a nonexistent path."""
+    assert not _has_rpmdb_files(tmp_path / "does-not-exist")
+
+
+# ============================================================
+# OSTree / tarfile fallback tests
+# ============================================================
+
+
+def _build_layer_tar(
+    files: dict[str, bytes],
+    hardlinks: dict[str, str] | None = None,
+    compress: bool = True,
+) -> bytes:
+    """Build a tar (optionally gzipped) containing the given files/hardlinks."""
+    buf = BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for path, data in files.items():
+            info = tarfile.TarInfo(name=path)
+            info.size = len(data)
+            tar.addfile(info, BytesIO(data))
+        for link_path, target_path in (hardlinks or {}).items():
+            info = tarfile.TarInfo(name=link_path)
+            info.type = tarfile.LNKTYPE
+            info.linkname = target_path
+            tar.addfile(info)
+    raw = buf.getvalue()
+    if compress:
+        return gzip.compress(raw)
+    return raw
+
+
+def _build_oci_layout(
+    oci_dir: Path,
+    layers: list[bytes],
+) -> None:
+    """Write a minimal OCI image layout with the given layer blobs."""
+    blobs = oci_dir / "blobs" / "sha256"
+    blobs.mkdir(parents=True, exist_ok=True)
+
+    layer_descriptors = []
+    for layer_data in layers:
+        digest = hashlib.sha256(layer_data).hexdigest()
+        (blobs / digest).write_bytes(layer_data)
+        layer_descriptors.append(
+            {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                "digest": f"sha256:{digest}",
+                "size": len(layer_data),
+            }
+        )
+
+    manifest = {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "config": {
+            "mediaType": "application/vnd.oci.image.config.v1+json",
+            "digest": "sha256:deadbeef",
+            "size": 0,
+        },
+        "layers": layer_descriptors,
+    }
+    manifest_bytes = json.dumps(manifest).encode()
+    manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
+    (blobs / manifest_digest).write_bytes(manifest_bytes)
+
+    index = {
+        "schemaVersion": 2,
+        "manifests": [
+            {
+                "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                "digest": f"sha256:{manifest_digest}",
+                "size": len(manifest_bytes),
+            }
+        ],
+    }
+    (oci_dir / "index.json").write_text(json.dumps(index))
+
+
+def test_scan_layer_for_rpmdb_regular_file(tmp_path: Path) -> None:
+    """Test _scan_layer_for_rpmdb extracts a regular RPM DB file."""
+    layer = _build_layer_tar(
+        {"usr/lib/sysimage/rpm/rpmdb.sqlite": b"fake-rpmdb-content"}
+    )
+    blob_path = tmp_path / "layer.tar.gz"
+    blob_path.write_bytes(layer)
+
+    rpmdb_dir = tmp_path / "out"
+    rpmdb_dir.mkdir()
+    result = _scan_layer_for_rpmdb(blob_path, _rpmdb_tar_members(), rpmdb_dir)
+    assert result == rpmdb_dir
+    assert (rpmdb_dir / "rpmdb.sqlite").read_bytes() == b"fake-rpmdb-content"
+
+
+def test_scan_layer_for_rpmdb_hardlink(tmp_path: Path) -> None:
+    """Test _scan_layer_for_rpmdb resolves hardlinks (OSTree scenario)."""
+    layer = _build_layer_tar(
+        files={
+            "sysroot/ostree/repo/objects/ab/cd1234.file": b"rpmdb-via-hardlink",
+        },
+        hardlinks={
+            "usr/share/rpm/rpmdb.sqlite": "sysroot/ostree/repo/objects/ab/cd1234.file",
+        },
+    )
+    blob_path = tmp_path / "layer.tar.gz"
+    blob_path.write_bytes(layer)
+
+    rpmdb_dir = tmp_path / "out"
+    rpmdb_dir.mkdir()
+    result = _scan_layer_for_rpmdb(blob_path, _rpmdb_tar_members(), rpmdb_dir)
+    assert result == rpmdb_dir
+    assert (rpmdb_dir / "rpmdb.sqlite").read_bytes() == b"rpmdb-via-hardlink"
+
+
+def test_scan_layer_for_rpmdb_no_match(tmp_path: Path) -> None:
+    """Test _scan_layer_for_rpmdb returns None when no DB files found."""
+    layer = _build_layer_tar({"etc/some-config": b"data"})
+    blob_path = tmp_path / "layer.tar.gz"
+    blob_path.write_bytes(layer)
+
+    rpmdb_dir = tmp_path / "out"
+    rpmdb_dir.mkdir()
+    result = _scan_layer_for_rpmdb(blob_path, _rpmdb_tar_members(), rpmdb_dir)
+    assert result is None
+
+
+def test_extract_rpmdb_from_layers(tmp_path: Path) -> None:
+    """Test _extract_rpmdb_from_layers finds DB in OCI layout."""
+    oci_dir = tmp_path / "_oci"
+    layer = _build_layer_tar({"usr/share/rpm/rpmdb.sqlite": b"ostree-rpmdb"})
+    _build_oci_layout(oci_dir, [layer])
+
+    mock_runner = create_autospec(run)
+
+    result = _extract_rpmdb_from_layers("my-ostree-image", tmp_path, mock_runner)
+    assert result is not None
+    assert (result / "rpmdb.sqlite").read_bytes() == b"ostree-rpmdb"
+    mock_runner.assert_called_once()
+    cmd = mock_runner.call_args.args[0]
+    assert cmd[0] == "skopeo"
+
+
+def test_extract_rpmdb_from_layers_no_db(tmp_path: Path) -> None:
+    """Test _extract_rpmdb_from_layers returns None when no DB found."""
+    oci_dir = tmp_path / "_oci"
+    layer = _build_layer_tar({"etc/passwd": b"root:x:0:0"})
+    _build_oci_layout(oci_dir, [layer])
+
+    mock_runner = create_autospec(run)
+
+    result = _extract_rpmdb_from_layers("my-custom-image", tmp_path, mock_runner)
+    assert result is None
+
+
+def test_extract_rpmdb_from_layers_malformed_oci(tmp_path: Path) -> None:
+    """Test _extract_rpmdb_from_layers handles malformed OCI layout gracefully."""
+    oci_dir = tmp_path / "_oci"
+    oci_dir.mkdir()
+    (oci_dir / "index.json").write_text("not valid json")
+
+    mock_runner = create_autospec(run)
+
+    result = _extract_rpmdb_from_layers("my-broken-image", tmp_path, mock_runner)
+    assert result is None
+
+
+def test_extract_rpmdb_from_layers_missing_index(tmp_path: Path) -> None:
+    """Test _extract_rpmdb_from_layers handles missing index.json gracefully."""
+    oci_dir = tmp_path / "_oci"
+    oci_dir.mkdir()
+
+    mock_runner = create_autospec(run)
+
+    result = _extract_rpmdb_from_layers("my-broken-image", tmp_path, mock_runner)
+    assert result is None
+
+
+def test_get_rpmdb_no_db_returns_target_dir(tmp_path: Path) -> None:
+    """Test get_rpmdb returns target_dir when oc finds nothing (no tarfile fallback)."""
+    mock_runner = create_autospec(run)
+    mock_runner.return_value = MagicMock()
+
+    result = get_rpmdb(
+        container_image="my-empty-image",
+        target_dir=tmp_path,
+        runner=mock_runner,
+    )
+    mock_runner.assert_called_once()
+    assert result == tmp_path
+
+
+def test_get_rpmdb_ostree_skips_oc(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    """Test that ostree=True skips oc image extract and goes to tarfile scanner."""
+    mock_runner = create_autospec(run)
+
+    fallback_dir = tmp_path / "_rpmdb"
+    fallback_dir.mkdir()
+    (fallback_dir / "rpmdb.sqlite").write_bytes(b"ostree-db")
+
+    mock_extract = MagicMock(return_value=fallback_dir)
+    monkeypatch.setattr(rpm_verifier, "_extract_rpmdb_from_layers", mock_extract)
+
+    result = get_rpmdb(
+        container_image="my-ostree-image",
+        target_dir=tmp_path,
+        runner=mock_runner,
+        ostree=True,
+    )
+    mock_runner.assert_not_called()
+    mock_extract.assert_called_once_with("my-ostree-image", tmp_path, mock_runner)
+    assert result == fallback_dir
+
+
+def test_get_rpmdb_ostree_no_db(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    """Test ostree=True returns target_dir when tarfile scanner finds nothing."""
+    mock_runner = create_autospec(run)
+    mock_extract = MagicMock(return_value=None)
+    monkeypatch.setattr(rpm_verifier, "_extract_rpmdb_from_layers", mock_extract)
+
+    result = get_rpmdb(
+        container_image="my-ostree-image",
+        target_dir=tmp_path,
+        runner=mock_runner,
+        ostree=True,
+    )
+    mock_runner.assert_not_called()
+    assert result == tmp_path
+
+
+# ============================================================
+# OSTree label detection tests
+# ============================================================
+
+
+@pytest.mark.parametrize(
+    ("labels", "expected"),
+    [
+        pytest.param({"ostree.bootable": "true"}, True, id="true-lowercase"),
+        pytest.param({"ostree.bootable": "True"}, True, id="true-titlecase"),
+        pytest.param({"ostree.bootable": "TRUE"}, True, id="true-uppercase"),
+        pytest.param({"ostree.bootable": "1"}, True, id="one"),
+        pytest.param({"ostree.bootable": "false"}, False, id="false"),
+        pytest.param({"ostree.bootable": ""}, False, id="empty"),
+        pytest.param({}, False, id="missing"),
+        pytest.param({"other.label": "true"}, False, id="wrong-label"),
+    ],
+)
+def test_is_ostree_image(labels: dict[str, str], expected: bool) -> None:
+    """Test _is_ostree_image label detection."""
+    assert _is_ostree_image(labels) == expected
+
+
+def test_inspect_image_labels() -> None:
+    """Test _inspect_image_labels calls skopeo inspect (non-raw)."""
+    mock_runner = create_autospec(run)
+    mock_runner.return_value.stdout = json.dumps(
+        {"Labels": {"ostree.bootable": "true", "version": "10"}}
+    )
+    result = _inspect_image_labels("registry/repo@sha256:abc", runner=mock_runner)
+    mock_runner.assert_called_once()
+    cmd = mock_runner.call_args.args[0]
+    assert cmd == ["skopeo", "inspect", "docker://registry/repo@sha256:abc"]
+    assert "--raw" not in cmd
+    assert result == {"ostree.bootable": "true", "version": "10"}
+
+
+def test_inspect_image_labels_no_labels() -> None:
+    """Test _inspect_image_labels handles missing Labels field."""
+    mock_runner = create_autospec(run)
+    mock_runner.return_value.stdout = json.dumps({"Name": "test"})
+    result = _inspect_image_labels("registry/repo@sha256:abc", runner=mock_runner)
+    assert result == {}
+
+
+def test_detect_ostree_images() -> None:
+    """Test detect_ostree_images identifies OSTree images."""
+    mock_runner = create_autospec(run)
+
+    def _side_effect(*args: Any, **_kwargs: Any) -> MagicMock:
+        img_arg = args[0][2]
+        result = MagicMock()
+        if "ostree" in img_arg:
+            result.stdout = json.dumps({"Labels": {"ostree.bootable": "true"}})
+        else:
+            result.stdout = json.dumps({"Labels": {"version": "9"}})
+        return result
+
+    mock_runner.side_effect = _side_effect
+    result = detect_ostree_images(
+        ["registry/ostree@sha256:a", "registry/standard@sha256:b"],
+        runner=mock_runner,
+    )
+    assert result == {"registry/ostree@sha256:a"}
+
+
+def test_detect_ostree_images_inspect_failure() -> None:
+    """Test detect_ostree_images skips images that fail inspection."""
+    mock_runner = create_autospec(run)
+    mock_runner.side_effect = CalledProcessError(1, "skopeo", stderr="error")
+    result = detect_ostree_images(["registry/repo@sha256:a"], runner=mock_runner)
+    assert result == set()
+
+
+def test_detect_ostree_images_skopeo_not_found() -> None:
+    """Test detect_ostree_images handles missing skopeo binary (OSError)."""
+    mock_runner = create_autospec(run)
+    mock_runner.side_effect = FileNotFoundError("skopeo")
+    result = detect_ostree_images(["registry/repo@sha256:a"], runner=mock_runner)
+    assert result == set()
 
 
 @pytest.mark.parametrize(
@@ -1082,7 +1469,7 @@ def test_format_run_summary() -> None:
     )
 
 
-class TestMain:
+class TestMain:  # pylint: disable=too-many-public-methods
     """Testing main"""
 
     @pytest.fixture()
@@ -1163,6 +1550,16 @@ class TestMain:
             return_value={},
         )
         monkeypatch.setattr(rpm_verifier, compute_layer_selectors.__name__, mock)
+        return mock
+
+    @pytest.fixture(autouse=True)
+    def mock_detect_ostree_images(self, monkeypatch: MonkeyPatch) -> MagicMock:
+        """Mock detect_ostree_images to return empty set by default."""
+        mock: MagicMock = create_autospec(
+            detect_ostree_images,
+            return_value=set(),
+        )
+        monkeypatch.setattr(rpm_verifier, detect_ostree_images.__name__, mock)
         return mock
 
     @pytest.fixture()
@@ -1499,6 +1896,7 @@ class TestMain:
             target_dir=target_dir,
             runner=run,
             layer_selectors=expected_selectors,
+            ostree=False,
         )
 
     def test_db_getter_closure_passes_none_for_unknown_image(
@@ -1548,6 +1946,54 @@ class TestMain:
             target_dir=target_dir,
             runner=run,
             layer_selectors=None,
+            ostree=False,
+        )
+
+    def test_db_getter_closure_passes_ostree_true(
+        # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self,
+        mock_image_processor: MagicMock,
+        mock_inspect_image_ref: MagicMock,
+        mock_get_images_from_inspection: MagicMock,
+        mock_detect_ostree_images: MagicMock,
+        create_set_output_and_status_mock: MagicMock,
+        mock_aggregate_results: MagicMock,
+        mock_generate_images_processed_result: MagicMock,
+        monkeypatch: MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Test that the db_getter closure passes ostree=True for OSTree images"""
+        image_ref = "quay.io/test/image@sha256:1234567890"
+        mock_detect_ostree_images.return_value = {image_ref}
+
+        mock_get_rpmdb = create_autospec(get_rpmdb, return_value=tmp_path)
+        monkeypatch.setattr(rpm_verifier, get_rpmdb.__name__, mock_get_rpmdb)
+
+        create_set_output_and_status_mock(with_failures=False)
+
+        rpm_verifier.main(  # pylint: disable=no-value-for-parameter
+            args=[
+                "--image-url",
+                "quay.io/test/image:tag",
+                "--image-digest",
+                "sha256:1234567890",
+                "--workdir",
+                tmp_path,
+            ],
+            obj={},
+            standalone_mode=False,
+        )
+
+        db_getter = mock_image_processor.call_args.kwargs["db_getter"]
+        target_dir = Path("/tmp/test")
+        db_getter(image_ref, target_dir)
+
+        mock_get_rpmdb.assert_called_once_with(
+            container_image=image_ref,
+            target_dir=target_dir,
+            runner=run,
+            layer_selectors=None,
+            ostree=True,
         )
 
     def test_main_image_index_with_modelcar_selectors(
@@ -1611,6 +2057,7 @@ class TestMain:
                 target_dir=target_dir,
                 runner=run,
                 layer_selectors=["[0]"],
+                ostree=False,
             )
 
     def test_prefetch_single_image_manifest(
@@ -1808,7 +2255,19 @@ class TestGetRpmdbRetry:
         """Test that transient errors trigger a retry"""
         mock_runner = create_autospec(run)
         transient_error = CalledProcessError(1, "oc", stderr="HTTP 502 Bad Gateway")
-        mock_runner.side_effect = [transient_error, MagicMock()]
+        call_count = 0
+
+        def _side_effect(*_args: Any, **_kwargs: Any) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise transient_error
+            legacy_dir = tmp_path / "var_lib_rpm"
+            legacy_dir.mkdir(exist_ok=True)
+            (legacy_dir / "rpmdb.sqlite").touch()
+            return MagicMock()
+
+        mock_runner.side_effect = _side_effect
 
         result = get_rpmdb(
             container_image="my-image",
@@ -1816,7 +2275,7 @@ class TestGetRpmdbRetry:
             runner=mock_runner,
         )
         assert mock_runner.call_count == 2
-        assert result == tmp_path
+        assert result == tmp_path / "var_lib_rpm"
 
     def test_no_retry_on_permanent_error(self, tmp_path: Path) -> None:
         """Test that permanent errors fail immediately without retry"""
@@ -1909,6 +2368,24 @@ class TestGetRpmdbLayerIndices:
                     "annotations": {
                         "olot.layer.content.inlayerpath": "/var/lib/rpm",
                         "olot.layer.content.type": "directory",
+                    },
+                },
+            ]
+        }
+        result = get_rpmdb_layer_indices(manifest)
+        assert result == [0]
+
+    def test_olot_layer_with_usr_share_rpm_is_kept(self) -> None:
+        """Test that inlayerpath pointing to /usr/share/rpm (OSTree) is kept"""
+        manifest: dict[str, Any] = {
+            "layers": [
+                {
+                    "mediaType": "application/vnd.oci.image.layer.v1.tar",
+                    "size": 100,
+                    "digest": "sha256:rpmlayer",
+                    "annotations": {
+                        "olot.layer.content.inlayerpath": "/usr/share/rpm/rpmdb.sqlite",
+                        "olot.layer.content.type": "file",
                     },
                 },
             ]

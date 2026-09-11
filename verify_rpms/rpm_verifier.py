@@ -4,6 +4,7 @@
 
 import json
 import sys
+import tarfile
 import tempfile
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -37,8 +38,18 @@ TRANSIENT_PATTERNS = [
 # OLOT (OCI Layers On Top) adds model-data layers to container images.
 # See https://github.com/containers/olot
 OLOT_ANNOTATION_PREFIX = "olot.layer.content."
+
 # No leading slash — matched against lstrip("/") paths in get_rpmdb_layer_indices.
-RPM_DB_PATHS = ("var/lib/rpm",)
+# All known RPM DB directory paths across RHEL/Fedora/OSTree variants.
+RPM_DB_PATHS = ("var/lib/rpm", "usr/lib/sysimage/rpm", "usr/share/rpm")
+
+# Subset of RPM_DB_PATHS safe for ``oc image extract --path``.
+# Excludes usr/share/rpm because OSTree images hardlink those files to
+# /sysroot/ostree/repo/objects/ — ``oc image extract`` cannot resolve
+# cross-path hardlinks and fails.
+_OC_EXTRACT_DB_PATHS = ("var/lib/rpm", "usr/lib/sysimage/rpm")
+
+_RPMDB_FILENAMES = frozenset({"rpmdb.sqlite", "Packages", "Packages.db"})
 
 
 def _is_transient_error(exception: BaseException) -> bool:
@@ -92,37 +103,284 @@ class ProcessedImage:
     output: str = ""
 
 
+def _has_rpmdb_files(directory: Path) -> bool:
+    """Check whether a directory contains actual RPM database files.
+
+    Returns False for empty directories or directories that only contain
+    a symlink (e.g. when ``oc image extract`` copies a symlink instead of
+    following it to the real database location).
+    """
+    if not directory.exists():
+        return False
+    for child in directory.iterdir():
+        if child.is_symlink():
+            continue
+        if child.is_file() or child.is_dir():
+            return True
+    return False
+
+
+def _rpmdb_tar_members() -> frozenset[str]:
+    """Return all normalized tar member paths that could be RPM DB files."""
+    paths: set[str] = set()
+    for db_path in RPM_DB_PATHS:
+        for fname in _RPMDB_FILENAMES:
+            paths.add(f"{db_path}/{fname}")
+    return frozenset(paths)
+
+
+def _copy_image_oci(
+    container_image: str,
+    oci_dir: Path,
+    runner: Callable = run,
+) -> None:
+    """Copy a container image to a local OCI layout directory.
+
+    Transient errors are handled by the caller's ``@_retry_on_transient``
+    decorator (typically ``get_rpmdb``), so this function is intentionally
+    not decorated to avoid multiplicative retry amplification.
+    """
+    runner(
+        ["skopeo", "copy", f"docker://{container_image}", f"oci:{oci_dir}:latest"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
+def _scan_layer_for_rpmdb(
+    blob_path: Path,
+    search_paths: frozenset[str],
+    rpmdb_dir: Path,
+) -> Path | None:
+    """Scan a single layer tarball for RPM DB files.
+
+    Handles hardlinks by resolving them to their target members within
+    the same tar archive — this is the key capability that
+    ``oc image extract`` lacks for OSTree images.
+    """
+    try:
+        with tarfile.open(str(blob_path), "r:*") as tar:
+            for member in tar.getmembers():
+                name = member.name.lstrip("./")
+                if name not in search_paths:
+                    continue
+                try:
+                    fileobj = tar.extractfile(member)
+                except (tarfile.StreamError, KeyError):
+                    continue
+                if fileobj is not None:
+                    dest = rpmdb_dir / Path(name).name
+                    dest.write_bytes(fileobj.read())
+                    return rpmdb_dir
+    except (tarfile.TarError, OSError) as exc:
+        print(
+            f"WARNING: Failed to scan layer blob {blob_path.name[:12]}: {exc}",
+            file=sys.stderr,
+        )
+    return None
+
+
+def _extract_rpmdb_from_layers(
+    container_image: str,
+    target_dir: Path,
+    runner: Callable = run,
+) -> Path | None:
+    """Scan OCI layer tarballs to find and extract the RPM database.
+
+    Used as a fallback when ``oc image extract`` cannot locate the DB
+    (e.g. OSTree images where files are hardlinked to content-addressed
+    objects that ``oc`` cannot resolve with path-filtered extraction).
+
+    :param container_image: the image reference to scan
+    :param target_dir: parent directory for the extraction
+    :param runner: subprocess.run to run CLI commands
+    :return: Path to directory containing extracted DB, or None
+    """
+    oci_dir = target_dir / "_oci"
+    oci_dir.mkdir(exist_ok=True)
+
+    _copy_image_oci(container_image, oci_dir, runner)
+
+    try:
+        index = json.loads((oci_dir / "index.json").read_text())
+        manifest_digest = index["manifests"][0]["digest"]
+        algo, hex_digest = manifest_digest.split(":", 1)
+        manifest = json.loads((oci_dir / "blobs" / algo / hex_digest).read_text())
+    except (
+        KeyError,
+        IndexError,
+        json.JSONDecodeError,
+        FileNotFoundError,
+        OSError,
+    ) as exc:
+        print(
+            f"WARNING: Malformed OCI layout for {container_image}: {exc}",
+            file=sys.stderr,
+        )
+        return None
+
+    search_paths = _rpmdb_tar_members()
+    rpmdb_dir = target_dir / "_rpmdb"
+    rpmdb_dir.mkdir(exist_ok=True)
+
+    for layer in reversed(manifest.get("layers", [])):
+        algo, hex_digest = layer["digest"].split(":", 1)
+        blob_path = oci_dir / "blobs" / algo / hex_digest
+        if not blob_path.exists():
+            continue
+        result = _scan_layer_for_rpmdb(blob_path, search_paths, rpmdb_dir)
+        if result is not None:
+            return result
+
+    return None
+
+
+@_retry_on_transient
+def _inspect_image_labels(
+    image_ref: str,
+    runner: Callable = run,
+) -> dict[str, str]:
+    """Inspect an image reference and return its config labels.
+
+    Uses ``skopeo inspect`` (non-raw) to read the image configuration
+    which includes labels set during the image build.
+
+    :param image_ref: full image reference (e.g. registry/repo@sha256:...)
+    :param runner: subprocess.run to run CLI commands
+    :return: dictionary of image labels
+    """
+    result = runner(
+        ["skopeo", "inspect", f"docker://{image_ref}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    data = json.loads(result.stdout)
+    return data.get("Labels") or {}
+
+
+def _is_ostree_image(labels: dict[str, str]) -> bool:
+    """Check whether an image is OSTree-based via the ``ostree.bootable`` label.
+
+    OSTree bootable container images set this label to indicate that the
+    filesystem is managed by OSTree.  Files in such images are hardlinked
+    to content-addressed objects under ``/sysroot/ostree/repo/objects/``,
+    which prevents ``oc image extract --path`` from resolving them.
+    """
+    return labels.get("ostree.bootable", "").lower() in ("true", "1")
+
+
+def detect_ostree_images(
+    images: list[str],
+    runner: Callable = run,
+) -> set[str]:
+    """Return the subset of *images* that are OSTree bootable containers.
+
+    Detection is based on the ``ostree.bootable`` image label.  Inspection
+    failures are silently skipped (the image will be processed via the
+    standard ``oc image extract`` path instead).
+
+    :param images: list of image references to inspect
+    :param runner: subprocess.run to run CLI commands
+    :return: set of image references that are OSTree bootable
+    """
+    ostree: set[str] = set()
+    for img in images:
+        try:
+            labels = _inspect_image_labels(img, runner)
+            if _is_ostree_image(labels):
+                ostree.add(img)
+                print(
+                    f"OSTree bootable image detected: {img}",
+                    file=sys.stderr,
+                )
+        except (
+            CalledProcessError,
+            json.JSONDecodeError,
+            TypeError,
+            OSError,
+        ) as exc:
+            print(
+                f"Label inspection skipped for {img}: {exc}",
+                file=sys.stderr,
+            )
+    return ostree
+
+
 @_retry_on_transient
 def get_rpmdb(
     container_image: str,
     target_dir: Path,
     runner: Callable = run,
     layer_selectors: list[str] | None = None,
+    ostree: bool = False,
 ) -> Path:
     """
-    Extract RPM DB from a given container image reference
+    Extract RPM DB from a given container image reference.
+
+    When *ostree* is ``True`` the ``oc image extract`` step is skipped
+    entirely and the image is scanned directly via ``skopeo`` +
+    ``tarfile`` (OSTree images hardlink files to content-addressed
+    objects that ``oc`` cannot resolve with path-filtered extraction).
+
+    For standard images the function uses a single ``oc image extract``
+    call with multiple ``--path`` flags to check both the legacy
+    ``/var/lib/rpm`` and RHEL 10+ ``/usr/lib/sysimage/rpm`` in one
+    pass (one blob download).
+
     :param container_image: the image to extract
     :param target_dir: the directory to extract the DB to
     :param runner: subprocess.run to run CLI commands
     :param layer_selectors: optional oc layer selectors (e.g. ["[0]", "[3]"])
+    :param ostree: skip oc and go directly to tarfile scanner
     :return: Path of the directory the DB extracted to
     """
+    if ostree:
+        print(
+            f"OSTree image ({container_image}): "
+            "using direct layer scan to extract RPM DB",
+            file=sys.stderr,
+        )
+        result = _extract_rpmdb_from_layers(container_image, target_dir, runner)
+        if result is not None:
+            return result
+        print(
+            f"WARNING: No RPM DB found in OSTree image {container_image}",
+            file=sys.stderr,
+        )
+        return target_dir
+
+    # Standard path: multi-path oc image extract
     if layer_selectors:
         image_args = [f"{container_image}{s}" for s in layer_selectors]
     else:
         image_args = [container_image]
+
+    subdirs: dict[str, Path] = {}
+    path_args: list[str] = []
+    for db_path in _OC_EXTRACT_DB_PATHS:
+        safe_name = db_path.replace("/", "_")
+        subdir = target_dir / safe_name
+        subdir.mkdir(exist_ok=True)
+        subdirs[db_path] = subdir
+        path_args.extend(["--path", f"/{db_path}/:{subdir}"])
+
     runner(
-        [
-            "oc",
-            "image",
-            "extract",
-            *image_args,
-            "--path",
-            f"/var/lib/rpm/:{target_dir}",
-        ],
+        ["oc", "image", "extract", *image_args, *path_args],
         capture_output=True,
         text=True,
         check=True,
+    )
+
+    for db_path in _OC_EXTRACT_DB_PATHS:
+        if _has_rpmdb_files(subdirs[db_path]):
+            return subdirs[db_path]
+
+    print(
+        f"WARNING: No RPM DB found via oc image extract for {container_image}. "
+        "If this is an OSTree image, ensure the ostree.bootable label is set.",
+        file=sys.stderr,
     )
     return target_dir
 
@@ -521,6 +779,7 @@ def main(  # pylint: disable=too-many-locals
         prefetched = {images[0]: process}
 
     layer_selectors = compute_layer_selectors(images, manifests=prefetched)
+    ostree_images = detect_ostree_images(images)
 
     def db_getter(image: str, target_dir: Path) -> Path:
         return get_rpmdb(
@@ -528,6 +787,7 @@ def main(  # pylint: disable=too-many-locals
             target_dir=target_dir,
             runner=run,
             layer_selectors=layer_selectors.get(image),
+            ostree=image in ostree_images,
         )
 
     processor = ImageProcessor(workdir=workdir, db_getter=db_getter)
