@@ -603,13 +603,13 @@ var _ = Describe("Push integration", func() {
 	})
 
 	It("returns error when archive is missing", func() {
-		Expect(pushChart(filepath.Join(GinkgoT().TempDir(), "missing.tgz"), "oci://x", "/tmp/auth", true)).NotTo(Succeed())
+		Expect(pushChart(filepath.Join(GinkgoT().TempDir(), "missing.tgz"), "oci://x", "/tmp/auth", true, nil)).NotTo(Succeed())
 	})
 
 	It("returns error when credentials file is missing", func() {
 		archive := filepath.Join(GinkgoT().TempDir(), "chart.tgz")
 		Expect(os.WriteFile(archive, []byte("not-a-chart"), 0o644)).To(Succeed())
-		Expect(pushChart(archive, "oci://quay.io/org/chart:1.0.0", filepath.Join(GinkgoT().TempDir(), "missing.json"), true)).NotTo(Succeed())
+		Expect(pushChart(archive, "oci://quay.io/org/chart:1.0.0", filepath.Join(GinkgoT().TempDir(), "missing.json"), true, nil)).NotTo(Succeed())
 	})
 
 	It("disables Helm strict mode when repo basename differs from chart name", func() {
@@ -632,11 +632,11 @@ var _ = Describe("Push integration", func() {
 		defer os.Remove(authFile)
 
 		dest := "oci://quay.io/tenant/chart-4-22:1.0.0"
-		errStrict := pushChart(archive, dest, authFile, true)
+		errStrict := pushChart(archive, dest, authFile, true, nil)
 		Expect(errStrict).To(HaveOccurred())
 		Expect(errStrict.Error()).To(ContainSubstring("strict mode"))
 
-		errLoose := pushChart(archive, dest, authFile, false)
+		errLoose := pushChart(archive, dest, authFile, false, nil)
 		Expect(errLoose).To(HaveOccurred())
 		Expect(errLoose.Error()).NotTo(ContainSubstring("strict mode"))
 	})

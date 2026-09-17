@@ -16,11 +16,14 @@ var _ = Describe("CLI", func() {
 			"--chart-version", "1.0.0",
 			"--source-code-dir", "src",
 			"--chart-context", "charts/app",
+			"--annotation", "release-channel=rc",
+			"--annotation", "git.commit=abc123",
 			"values.yaml", "values-prod.yaml",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.image).To(Equal("quay.io/org/chart:tag"))
 		Expect(cfg.chartVersion).To(Equal("1.0.0"))
+		Expect(cfg.annotations).To(Equal([]string{"release-channel=rc", "git.commit=abc123"}))
 		Expect(cfg.valuesFiles).To(Equal([]string{"values.yaml", "values-prod.yaml"}))
 	})
 
@@ -199,6 +202,72 @@ var _ = Describe("CLI", func() {
 		_, err := parseCLI(env, nil)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("PUSH_CHART_TO_IMAGE_REPOSITORY"))
+	})
+
+	It("prefers explicit annotation flags over duplicate env entries", func() {
+		env := func(key string) string {
+			switch key {
+			case "IMAGE":
+				return "quay.io/org/chart:tag"
+			case "CHART_VERSION":
+				return "1.0.0"
+			case "ANNOTATIONS":
+				return "release-channel=from-env\ngit.commit=from-env"
+			default:
+				return ""
+			}
+		}
+
+		cfg, err := parseCLI(env, []string{
+			"--annotation", "release-channel=from-flag",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.annotations).To(Equal([]string{
+			"release-channel=from-env",
+			"git.commit=from-env",
+			"release-channel=from-flag",
+		}))
+
+		parsed, err := helmchartoci.ParseAnnotations(cfg.annotations)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(parsed).To(Equal(map[string]string{
+			"release-channel": "from-flag",
+			"git.commit":      "from-env",
+		}))
+	})
+
+	It("parses annotations from env", func() {
+		env := func(key string) string {
+			switch key {
+			case "IMAGE":
+				return "quay.io/org/chart:tag"
+			case "CHART_VERSION":
+				return "1.0.0"
+			case "ANNOTATIONS":
+				return "release-channel=rc\ngit.commit=abc123\n"
+			default:
+				return ""
+			}
+		}
+
+		cfg, err := parseCLI(env, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.annotations).To(Equal([]string{"release-channel=rc", "git.commit=abc123"}))
+	})
+
+	It("passes annotations to Run", func() {
+		var got helmchartoci.RunOptions
+		Expect(execute(context.Background(), cliConfig{
+			image:         "quay.io/org/chart:tag",
+			chartVersion:  "1.0.0",
+			sourceCodeDir: "source",
+			chartContext:  "chart",
+			annotations:   []string{"release-channel=rc"},
+		}, func(_ context.Context, opts helmchartoci.RunOptions) error {
+			got = opts
+			return nil
+		})).To(Succeed())
+		Expect(got.Annotations).To(Equal([]string{"release-channel=rc"}))
 	})
 
 	It("passes push chart to image repository to Run", func() {

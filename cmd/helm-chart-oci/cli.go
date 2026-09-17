@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konflux-ci/tools/internal/helmchartoci"
 )
@@ -24,6 +25,7 @@ type cliConfig struct {
 	imageDigestResult          string
 	overwriteChartName         bool
 	pushChartToImageRepository bool
+	annotations                []string
 	valuesFiles                []string
 }
 
@@ -46,6 +48,11 @@ func parseCLI(env func(string) string, args []string) (cliConfig, error) {
 		"Rewrite Chart.yaml name from IMAGE repo basename (0.3 behavior)")
 	pushChartToImageRepositoryFlag := fs.Bool("push-chart-to-image-repository", false,
 		"Publish under the IMAGE repository (oci://<IMAGE>:<version>) instead of oci://<parent(IMAGE)>/<chart-name>:<version>; use with OVERWRITE_CHART_NAME=false")
+	annotations := annotationsFromEnv(env("ANNOTATIONS"))
+	fs.Func("annotation", "Additional OCI manifest annotation as key=value (repeatable)", func(value string) error {
+		annotations = append(annotations, value)
+		return nil
+	})
 
 	if err := fs.Parse(args); err != nil {
 		return cliConfig{}, err
@@ -101,8 +108,23 @@ func parseCLI(env func(string) string, args []string) (cliConfig, error) {
 		imageDigestResult:          *imageDigestResult,
 		overwriteChartName:         overwriteChartName,
 		pushChartToImageRepository: pushChartToImageRepository,
+		annotations:                annotations,
 		valuesFiles:                valuesFiles,
 	}, nil
+}
+
+func annotationsFromEnv(value string) []string {
+	if value == "" {
+		return nil
+	}
+	var entries []string
+	for line := range strings.SplitSeq(value, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			entries = append(entries, line)
+		}
+	}
+	return entries
 }
 
 func execute(ctx context.Context, cfg cliConfig, runFn func(context.Context, helmchartoci.RunOptions) error) error {
@@ -126,6 +148,7 @@ func execute(ctx context.Context, cfg cliConfig, runFn func(context.Context, hel
 		ChartVersion:               cfg.chartVersion,
 		AppVersion:                 cfg.appVersion,
 		ImageMappings:              cfg.imageMappings,
+		Annotations:                cfg.annotations,
 		ValuesFiles:                cfg.valuesFiles,
 		ImageURLResult:             cfg.imageURLResult,
 		ImageDigestResult:          cfg.imageDigestResult,

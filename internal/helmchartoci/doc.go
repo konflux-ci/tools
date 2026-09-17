@@ -14,11 +14,13 @@
 //
 //  1. Resolve chart name (Chart.yaml and/or IMAGE; see Chart metadata).
 //  2. Apply IMAGE_MAPPINGS to templates/ and values files.
-//  3. Resolve chart version (parameters and/or git; see Versioning).
-//  4. Resolve appVersion (APP_VERSION or COMMIT_SHA).
-//  5. Package the chart (helm package --version / --app-version) and push to
+//  3. Merge ANNOTATIONS into Chart.yaml (key=value entries become OCI manifest
+//     annotations when the chart is pushed).
+//  4. Resolve chart version (parameters and/or git; see Versioning).
+//  5. Resolve appVersion (APP_VERSION or COMMIT_SHA).
+//  6. Package the chart (helm package --version / --app-version) and push to
 //     OCI, then tag the IMAGE reference.
-//  6. Write IMAGE_URL and IMAGE_DIGEST task results when paths are set.
+//  7. Write IMAGE_URL and IMAGE_DIGEST task results when paths are set.
 //
 // Chart dependencies are built when Chart.yaml declares dependencies. HTTP(S)
 // repository URLs are registered in Helm's repositories file before dependency
@@ -73,6 +75,8 @@
 //   - version: not taken from Chart.yaml; see Versioning.
 //   - appVersion: not taken from Chart.yaml; see App version.
 //   - dependencies: built from Chart.yaml when .dependencies is present.
+//   - annotations: merged from ANNOTATIONS key=value entries before packaging.
+//     Static annotations committed in Chart.yaml are preserved unless overwritten.
 //
 // # Image mappings
 //
