@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o /
 
 FROM quay.io/konflux-ci/task-runner@sha256:c34c933c269e2401bb042fe69e2999cf288331b6586d4f4eca9c845270d9b1f9 AS task-runner-image
 
-FROM registry.access.redhat.com/ubi9/python-312:1789345511@sha256:608649675c344ac80d58842b883515f39a2232398386805bc6a741f823340a4e
+FROM registry.access.redhat.com/ubi9/python-312:1789950556@sha256:43c0a3b7e63c2b5b44626bb99a45df33e243a026982b2548c16b303897d16205
 
 LABEL \
     name="konflux-ci/tools" \
