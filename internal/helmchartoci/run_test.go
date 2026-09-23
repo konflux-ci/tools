@@ -58,6 +58,38 @@ var _ = Describe("Run", func() {
 		Expect(string(updated)).To(ContainSubstring("name: my-chart"))
 	})
 
+	It("merges annotations into Chart.yaml before packaging", func() {
+		root := GinkgoT().TempDir()
+		chartDir := filepath.Join(root, "chart")
+		Expect(os.MkdirAll(chartDir, 0o755)).To(Succeed())
+		writeChart(chartDir, "product-chart")
+
+		pusher := &fakePusher{
+			result: push.Result{
+				ImageURL:    "quay.io/org/product-chart:1.0.0_test",
+				ImageDigest: "sha256:deadbeef",
+			},
+		}
+
+		Expect(helmchartoci.Run(context.Background(), helmchartoci.RunOptions{
+			Image:         "quay.io/org/product-chart:tag",
+			ChartVersion:  "1.0.0+test",
+			SourceCodeDir: root,
+			ChartContext:  "chart",
+			Annotations: []string{
+				"release-channel=release-candidate",
+				"build-id=2.4.0-rc.1-abcdef1",
+			},
+			Pusher: pusher,
+		})).To(Succeed())
+
+		updated, err := os.ReadFile(filepath.Join(chartDir, "Chart.yaml"))
+		Expect(err).NotTo(HaveOccurred())
+		content := string(updated)
+		Expect(content).To(ContainSubstring("release-channel: release-candidate"))
+		Expect(content).To(ContainSubstring("build-id: 2.4.0-rc.1-abcdef1"))
+	})
+
 	It("preserves chart name when overwrite is disabled", func() {
 		root := GinkgoT().TempDir()
 		chartDir := filepath.Join(root, "chart")
@@ -152,6 +184,17 @@ var _ = Describe("Run", func() {
 			err := helmchartoci.Run(context.Background(), helmchartoci.RunOptions{
 				SourceCodeDir: root,
 				ChartContext:  "chart",
+			})
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("returns error for invalid annotations", func() {
+			err := helmchartoci.Run(context.Background(), helmchartoci.RunOptions{
+				Image:         "quay.io/org/chart:tag",
+				ChartVersion:  "1.0.0",
+				SourceCodeDir: root,
+				ChartContext:  "chart",
+				Annotations:   []string{"invalid"},
 			})
 			Expect(err).To(HaveOccurred())
 		})

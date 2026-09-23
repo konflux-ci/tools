@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,27 +66,50 @@ func readChartYAML(chartDir string) (chartYAML, error) {
 // Client orchestrates chart packaging and OCI publication. Dependencies are
 // injectable for testing.
 type Client struct {
-	BuildDependencies func(chartDir string) error
-	PackageChart      func(opts Options) (string, error)
-	PushChart         func(archive, dest, authFile string, strict bool) error
-	CopyImage         func(ctx context.Context, src, dst string) error
-	ChartDigest       func(ctx context.Context, ref string) (string, error)
-	ScopedAuth        func(imageRepo string) (string, error)
+	BuildDependencies  func(chartDir string) error
+	PackageChart       func(opts Options) (string, error)
+	PushChart          func(archive, dest, authFile string, strict bool) error
+	CopyImage          func(ctx context.Context, src, dst string) error
+	ChartDigest        func(ctx context.Context, ref string) (string, error)
+	ScopedAuth         func(imageRepo string) (string, error)
+	registryHTTPClient *http.Client
+}
+
+// ClientOption configures a Client.
+type ClientOption func(*Client)
+
+// WithRegistryHTTPClient overrides the HTTP client used for registry push,
+// copy, and digest operations. Used by tests with in-memory TLS registries.
+func WithRegistryHTTPClient(httpClient *http.Client) ClientOption {
+	return func(c *Client) {
+		c.registryHTTPClient = httpClient
+	}
 }
 
 // NewClient returns a Client wired to the default Helm and registry backends.
-func NewClient() *Client {
-	return &Client{
+func NewClient(opts ...ClientOption) *Client {
+	client := &Client{
 		BuildDependencies: buildDependencies,
 		PackageChart:      packageChart,
-		PushChart:         pushChart,
-		CopyImage: func(ctx context.Context, src, dst string) error {
-			return crane.Copy(src, dst, crane.WithContext(ctx))
-		},
-		ChartDigest: func(ctx context.Context, ref string) (string, error) {
-			return crane.Digest(ref, crane.WithContext(ctx))
-		},
-		ScopedAuth: scopedRegistryAuth,
+		ScopedAuth:        scopedRegistryAuth,
+	}
+	for _, opt := range opts {
+		opt(client)
+	}
+	client.bindRegistryHooks()
+	return client
+}
+
+func (c *Client) bindRegistryHooks() {
+	httpClient := c.registryHTTPClient
+	c.PushChart = func(archive, dest, authFile string, strict bool) error {
+		return pushChart(archive, dest, authFile, strict, httpClient)
+	}
+	c.CopyImage = func(ctx context.Context, src, dst string) error {
+		return copyImage(ctx, src, dst, httpClient)
+	}
+	c.ChartDigest = func(ctx context.Context, ref string) (string, error) {
+		return chartDigest(ctx, ref, httpClient)
 	}
 }
 
@@ -223,17 +247,37 @@ func packageChart(opts Options) (string, error) {
 	return archive, nil
 }
 
-func pushChart(archive, dest, authFile string, strict bool) error {
+func copyImage(ctx context.Context, src, dst string, httpClient *http.Client) error {
+	opts := []crane.Option{crane.WithContext(ctx)}
+	if httpClient != nil {
+		opts = append(opts, crane.WithTransport(httpClient.Transport))
+	}
+	return crane.Copy(src, dst, opts...)
+}
+
+func chartDigest(ctx context.Context, ref string, httpClient *http.Client) (string, error) {
+	opts := []crane.Option{crane.WithContext(ctx)}
+	if httpClient != nil {
+		opts = append(opts, crane.WithTransport(httpClient.Transport))
+	}
+	return crane.Digest(ref, opts...)
+}
+
+func pushChart(archive, dest, authFile string, strict bool, httpClient *http.Client) error {
 	data, err := os.ReadFile(archive)
 	if err != nil {
 		return fmt.Errorf("read chart archive: %w", err)
 	}
 
-	client, err := registry.NewClient(
+	clientOpts := []registry.ClientOption{
 		registry.ClientOptEnableCache(true),
 		registry.ClientOptWriter(os.Stdout),
 		registry.ClientOptCredentialsFile(authFile),
-	)
+	}
+	if httpClient != nil {
+		clientOpts = append(clientOpts, registry.ClientOptHTTPClient(httpClient))
+	}
+	client, err := registry.NewClient(clientOpts...)
 	if err != nil {
 		return fmt.Errorf("create registry client: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konflux-ci/tools/internal/helmchartoci"
 )
@@ -24,10 +25,12 @@ type cliConfig struct {
 	imageDigestResult          string
 	overwriteChartName         bool
 	pushChartToImageRepository bool
+	annotations                []string
 	valuesFiles                []string
 }
 
 func parseCLI(env func(string) string, args []string) (cliConfig, error) {
+	args = expandArrayFlags(args, "annotation", "values")
 	fs := flag.NewFlagSet("helm-chart-oci", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
@@ -46,9 +49,25 @@ func parseCLI(env func(string) string, args []string) (cliConfig, error) {
 		"Rewrite Chart.yaml name from IMAGE repo basename (0.3 behavior)")
 	pushChartToImageRepositoryFlag := fs.Bool("push-chart-to-image-repository", false,
 		"Publish under the IMAGE repository (oci://<IMAGE>:<version>) instead of oci://<parent(IMAGE)>/<chart-name>:<version>; use with OVERWRITE_CHART_NAME=false")
+	annotations := annotationsFromEnv(env("ANNOTATIONS"))
+	fs.Func("annotation", "OCI manifest annotation as key=value (repeatable; several values may follow one flag)", func(value string) error {
+		annotations = append(annotations, value)
+		return nil
+	})
+	var valuesFiles []string
+	fs.Func("values", "Values file for image substitution (repeatable; several values may follow one flag)", func(value string) error {
+		valuesFiles = append(valuesFiles, value)
+		return nil
+	})
 
 	if err := fs.Parse(args); err != nil {
 		return cliConfig{}, err
+	}
+	if leftover := fs.Args(); len(leftover) > 0 {
+		return cliConfig{}, fmt.Errorf("unexpected argument %q; use --values for values files", leftover[0])
+	}
+	if len(valuesFiles) == 0 {
+		valuesFiles = []string{"values.yaml"}
 	}
 
 	overwriteChartName, err := boolFlagWithEnv(
@@ -75,11 +94,6 @@ func parseCLI(env func(string) string, args []string) (cliConfig, error) {
 		return cliConfig{}, err
 	}
 
-	valuesFiles := fs.Args()
-	if len(valuesFiles) == 0 {
-		valuesFiles = []string{"values.yaml"}
-	}
-
 	if *image == "" {
 		return cliConfig{}, fmt.Errorf("--image is required")
 	}
@@ -101,8 +115,74 @@ func parseCLI(env func(string) string, args []string) (cliConfig, error) {
 		imageDigestResult:          *imageDigestResult,
 		overwriteChartName:         overwriteChartName,
 		pushChartToImageRepository: pushChartToImageRepository,
+		annotations:                annotations,
 		valuesFiles:                valuesFiles,
 	}, nil
+}
+
+// expandArrayFlags rewrites Tekton-style array flags into repeated flags, matching
+// konflux-build-cli. `--annotation a b --values v1 v2` becomes
+// `--annotation a --annotation b --values v1 --values v2`. A bare array flag with
+// no following values is dropped so an empty Tekton array does not consume the
+// next argument. Already-repeated flags are unchanged.
+func expandArrayFlags(args []string, flagNames ...string) []string {
+	multi := make(map[string]bool, len(flagNames))
+	for _, name := range flagNames {
+		multi["--"+name] = true
+	}
+
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			out = append(out, args[i:]...)
+			break
+		}
+
+		flagName, inline, hasInline := splitArrayFlag(arg, multi)
+		if flagName == "" {
+			out = append(out, arg)
+			continue
+		}
+		if hasInline {
+			out = append(out, flagName, inline)
+		}
+		j := i + 1
+		for j < len(args) && args[j] != "--" && !strings.HasPrefix(args[j], "-") {
+			out = append(out, flagName, args[j])
+			j++
+		}
+		i = j - 1
+	}
+	return out
+}
+
+func splitArrayFlag(arg string, multi map[string]bool) (flagName, inline string, hasInline bool) {
+	if multi[arg] {
+		return arg, "", false
+	}
+	if !strings.HasPrefix(arg, "--") {
+		return "", "", false
+	}
+	name, value, ok := strings.Cut(arg, "=")
+	if !ok || !multi[name] {
+		return "", "", false
+	}
+	return name, value, true
+}
+
+func annotationsFromEnv(value string) []string {
+	if value == "" {
+		return nil
+	}
+	var entries []string
+	for line := range strings.SplitSeq(value, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			entries = append(entries, line)
+		}
+	}
+	return entries
 }
 
 func execute(ctx context.Context, cfg cliConfig, runFn func(context.Context, helmchartoci.RunOptions) error) error {
@@ -126,6 +206,7 @@ func execute(ctx context.Context, cfg cliConfig, runFn func(context.Context, hel
 		ChartVersion:               cfg.chartVersion,
 		AppVersion:                 cfg.appVersion,
 		ImageMappings:              cfg.imageMappings,
+		Annotations:                cfg.annotations,
 		ValuesFiles:                cfg.valuesFiles,
 		ImageURLResult:             cfg.imageURLResult,
 		ImageDigestResult:          cfg.imageDigestResult,
