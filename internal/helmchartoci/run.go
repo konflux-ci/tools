@@ -31,6 +31,7 @@ type RunOptions struct {
 	ChartVersion               string
 	AppVersion                 string
 	ImageMappings              string
+	Annotations                []string
 	ValuesFiles                []string
 	ImageURLResult             string
 	ImageDigestResult          string
@@ -58,6 +59,14 @@ func Run(ctx context.Context, opts RunOptions) error {
 		return err
 	}
 	if err := ApplyImageMappings(chartDir, mappings, opts.ValuesFiles); err != nil {
+		return err
+	}
+
+	annotations, err := ParseAnnotations(opts.Annotations)
+	if err != nil {
+		return err
+	}
+	if err := ApplyChartAnnotations(chartDir, annotations); err != nil {
 		return err
 	}
 
