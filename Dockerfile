@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi10/go-toolset:1788946966@sha256:de00e16138966f9fed6bca2d22d28f6cc0d50b26ef6977398e2d8980d80be75f AS go-builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1790644755@sha256:290ba654458e9a269b1509d10e6ebbd3c2b2456570e73e73201adb3ee54fb244 AS go-builder
 
 WORKDIR /workspace
 COPY go.mod go.sum ./
