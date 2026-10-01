@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "a575d3e2401199dbb999bebbefdd8bc6b825eec2551bcd0470d1a45669fc0c8f"
+            "sha256": "b876f3a7d6b916a0a005f651db8dd58db7a6bed2c3646c3ca9ffa3aae8b67ad8"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -85,11 +85,11 @@
         },
         "astroid": {
             "hashes": [
-                "sha256:6d7b483f37281a697fa0878a9eaaa3dbefb302970e90c680712bf746a4ebb3a1",
-                "sha256:8cdaf5b7f3f4f39557ae05ed8b0852136b43a04ab686db7d39255b206233677a"
+                "sha256:366c99c2907b6407869b1bbfd8abb10f3aea5818309e9c93c9b9c93ecf14bc4f",
+                "sha256:d03854b09d92c08e18d8e7d9185d393961186ed0747136d8fcb2d1c008a504ec"
             ],
             "markers": "python_full_version >= '3.10.0'",
-            "version": "==4.3.2"
+            "version": "==4.3.3"
         },
         "black": {
             "hashes": [
@@ -692,47 +692,5 @@
             "version": "==4.16.0"
         }
     },
-    "develop": {
-        "iniconfig": {
-            "hashes": [
-                "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730",
-                "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12"
-            ],
-            "markers": "python_version >= '3.10'",
-            "version": "==2.3.0"
-        },
-        "packaging": {
-            "hashes": [
-                "sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79",
-                "sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
-            ],
-            "markers": "python_version >= '3.9'",
-            "version": "==26.3"
-        },
-        "pluggy": {
-            "hashes": [
-                "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3",
-                "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746"
-            ],
-            "markers": "python_version >= '3.9'",
-            "version": "==1.6.0"
-        },
-        "pygments": {
-            "hashes": [
-                "sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
-                "sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c"
-            ],
-            "markers": "python_version >= '3.9'",
-            "version": "==2.21.0"
-        },
-        "pytest": {
-            "hashes": [
-                "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313",
-                "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c"
-            ],
-            "index": "pypi",
-            "markers": "python_version >= '3.10'",
-            "version": "==9.1.1"
-        }
-    }
+    "develop": {}
 }
