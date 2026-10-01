@@ -574,6 +574,14 @@
             "markers": "python_version >= '3.9'",
             "version": "==1.6.0"
         },
+        "pygments": {
+            "hashes": [
+                "sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+                "sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c"
+            ],
+            "markers": "python_version >= '3.9'",
+            "version": "==2.21.0"
+        },
         "pylint": {
             "hashes": [
                 "sha256:6f1305780229ae720e89b8aff2b3ff857cbb268fbab98c8b586960267667ad34",
@@ -594,12 +602,12 @@
         },
         "pytest": {
             "hashes": [
-                "sha256:1733f0620f6cda4095bbf0d9ff8022486e91892245bb9e7d5542c018f612f233",
-                "sha256:d507d4482197eac0ba2bae2e9babf0672eb333017bcedaa5fb1a3d42c1174b3f"
+                "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313",
+                "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.8'",
-            "version": "==8.2.0"
+            "markers": "python_version >= '3.10'",
+            "version": "==9.1.1"
         },
         "pytest-cov": {
             "hashes": [
