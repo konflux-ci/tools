@@ -16,7 +16,6 @@ pytest-cov = "*"
 tenacity = "*"
 
 [dev-packages]
-pytest = "*"
 
 [requires]
 # Keep in sync with .python-version

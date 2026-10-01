@@ -37,6 +37,16 @@ def test_python_toolchain_versions_in_sync() -> None:
     assert dockerfile_match.group("version") == pipenv_version
 
 
+def test_no_duplicate_packages_across_pipfile_sections() -> None:
+    """Packages must not appear in both [packages] and [dev-packages]."""
+    pipfile = (ROOT / "Pipfile").read_text(encoding="utf-8")
+    pipfile_data = tomllib.loads(pipfile)
+    packages = set(pipfile_data.get("packages", {}).keys())
+    dev_packages = set(pipfile_data.get("dev-packages", {}).keys())
+    overlap = packages & dev_packages
+    assert not overlap, f"Packages in both [packages] and [dev-packages]: {overlap}"
+
+
 def test_mypy() -> None:
     """Static Type check"""
     run(["mypy"] + PKGS, check=True)
