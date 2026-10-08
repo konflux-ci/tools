@@ -1870,7 +1870,7 @@ class TestMain:  # pylint: disable=too-many-public-methods
             rpm_verifier, compute_layer_selectors.__name__, mock_selectors
         )
         mock_get_rpmdb = create_autospec(get_rpmdb, return_value=tmp_path)
-        monkeypatch.setattr(rpm_verifier, get_rpmdb.__name__, mock_get_rpmdb)
+        monkeypatch.setattr(rpm_verifier, "get_rpmdb", mock_get_rpmdb)
 
         create_set_output_and_status_mock(with_failures=False)
 
@@ -1920,7 +1920,7 @@ class TestMain:  # pylint: disable=too-many-public-methods
             rpm_verifier, compute_layer_selectors.__name__, mock_selectors
         )
         mock_get_rpmdb = create_autospec(get_rpmdb, return_value=tmp_path)
-        monkeypatch.setattr(rpm_verifier, get_rpmdb.__name__, mock_get_rpmdb)
+        monkeypatch.setattr(rpm_verifier, "get_rpmdb", mock_get_rpmdb)
 
         create_set_output_and_status_mock(with_failures=False)
 
@@ -1967,7 +1967,7 @@ class TestMain:  # pylint: disable=too-many-public-methods
         mock_detect_ostree_images.return_value = {image_ref}
 
         mock_get_rpmdb = create_autospec(get_rpmdb, return_value=tmp_path)
-        monkeypatch.setattr(rpm_verifier, get_rpmdb.__name__, mock_get_rpmdb)
+        monkeypatch.setattr(rpm_verifier, "get_rpmdb", mock_get_rpmdb)
 
         create_set_output_and_status_mock(with_failures=False)
 
@@ -2020,12 +2020,10 @@ class TestMain:  # pylint: disable=too-many-public-methods
         mock_inspect_raw = create_autospec(
             inspect_raw_manifest, return_value=MODELCAR_MANIFEST
         )
-        monkeypatch.setattr(
-            rpm_verifier, inspect_raw_manifest.__name__, mock_inspect_raw
-        )
+        monkeypatch.setattr(rpm_verifier, "inspect_raw_manifest", mock_inspect_raw)
 
         mock_get_rpmdb = create_autospec(get_rpmdb, return_value=tmp_path)
-        monkeypatch.setattr(rpm_verifier, get_rpmdb.__name__, mock_get_rpmdb)
+        monkeypatch.setattr(rpm_verifier, "get_rpmdb", mock_get_rpmdb)
 
         create_set_output_and_status_mock(with_failures=False)
 
