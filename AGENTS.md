@@ -59,3 +59,4 @@ pipenv run mypy verify_rpms/rpm_verifier.py
 | Skill | Use when |
 |-------|----------|
 | [review-hermetic-multiarch-debt](skills/review-hermetic-multiarch-debt/SKILL.md) | Reviewing PRs for Dockerfile, deps, `.tekton/`, or build/runtime debt |
+| [retro-filing-policy](skills/retro-filing-policy/SKILL.md) | Retro output (PR close or `/fs-retro`). Keep `proposals` empty unless the human comment explicitly says to file issues. |
