@@ -85,11 +85,11 @@
         },
         "astroid": {
             "hashes": [
-                "sha256:366c99c2907b6407869b1bbfd8abb10f3aea5818309e9c93c9b9c93ecf14bc4f",
-                "sha256:d03854b09d92c08e18d8e7d9185d393961186ed0747136d8fcb2d1c008a504ec"
+                "sha256:2bcd0d02648a443a4b818c952c3550091989daefac3c12d3b83b2289482e0818",
+                "sha256:d515a105722b72098bbe82d430d65e635f742b6cbac3bdfaf8b7c188b87c5e39"
             ],
             "markers": "python_full_version >= '3.10.0'",
-            "version": "==4.3.3"
+            "version": "==4.3.4"
         },
         "black": {
             "hashes": [
