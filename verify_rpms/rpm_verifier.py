@@ -251,7 +251,7 @@ def _inspect_image_labels(
     :return: dictionary of image labels
     """
     result = runner(
-        ["skopeo", "inspect", f"docker://{image_ref}"],
+        ["skopeo", "inspect", "--no-tags", f"docker://{image_ref}"],
         capture_output=True,
         text=True,
         check=True,

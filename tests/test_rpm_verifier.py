@@ -516,7 +516,7 @@ def test_inspect_image_labels() -> None:
     result = _inspect_image_labels("registry/repo@sha256:abc", runner=mock_runner)
     mock_runner.assert_called_once()
     cmd = mock_runner.call_args.args[0]
-    assert cmd == ["skopeo", "inspect", "docker://registry/repo@sha256:abc"]
+    assert cmd == ["skopeo", "inspect", "--no-tags", "docker://registry/repo@sha256:abc"]
     assert "--raw" not in cmd
     assert result == {"ostree.bootable": "true", "version": "10"}
 
@@ -534,7 +534,7 @@ def test_detect_ostree_images() -> None:
     mock_runner = create_autospec(run)
 
     def _side_effect(*args: Any, **_kwargs: Any) -> MagicMock:
-        img_arg = args[0][2]
+        img_arg = args[0][3]
         result = MagicMock()
         if "ostree" in img_arg:
             result.stdout = json.dumps({"Labels": {"ostree.bootable": "true"}})
