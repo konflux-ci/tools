@@ -50,6 +50,11 @@
       "autoApprove": false
     },
     {
+      "description": "Run GitHub Actions updates on MintMaker cadence",
+      "matchDatasources": ["github-actions"],
+      "schedule": ["at any time"]
+    },
+    {
       "description": "Auto-merge GitHub Actions patch updates",
       "matchDatasources": ["github-actions"],
       "matchUpdateTypes": ["patch"],
