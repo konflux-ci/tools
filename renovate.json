@@ -55,6 +55,12 @@
       "schedule": ["at any time"]
     },
     {
+      "description": "Run fullsend reusable workflow updates on MintMaker cadence",
+      "matchDepNames": ["fullsend-ai/fullsend"],
+      "matchDatasources": ["github-releases"],
+      "schedule": ["at any time"]
+    },
+    {
       "description": "Auto-merge GitHub Actions patch updates",
       "matchDatasources": ["github-actions"],
       "matchUpdateTypes": ["patch"],
@@ -122,6 +128,16 @@
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "helm/helm",
       "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Track fullsend reusable workflow SHA pins",
+      "fileMatch": ["^\\.github/workflows/.*\\.ya?ml$"],
+      "matchStrings": [
+        "uses:\\s+fullsend-ai/fullsend/.github/workflows/[^@]+@(?<currentDigest>[a-f0-9]+)\\s+#\\s*(?<currentValue>v\\S+)"
+      ],
+      "depNameTemplate": "fullsend-ai/fullsend",
+      "datasourceTemplate": "github-releases"
     }
   ],
   "prConcurrentLimit": 0
