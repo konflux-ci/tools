@@ -1,9 +1,5 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "updateNotScheduled": false,
-  "schedule": [
-    "after 5pm on sunday"
-  ],
   "automergeStrategy": "merge-commit",
   "platformAutomerge": true,
   "packageRules": [
@@ -48,11 +44,6 @@
       "matchDatasources": ["pypi"],
       "automerge": false,
       "autoApprove": false
-    },
-    {
-      "description": "Run GitHub Actions updates on MintMaker cadence",
-      "matchDatasources": ["github-actions"],
-      "schedule": ["at any time"]
     },
     {
       "description": "Auto-merge GitHub Actions patch updates",
