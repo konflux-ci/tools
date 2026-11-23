@@ -22,11 +22,9 @@ PR targets them.
 ### Dockerfile (`Dockerfile`)
 
 - `yum install` and OpenShift client `curl` use `TARGETARCH` / `OCP_ARCH` for
-  `oc` — pattern to **follow** for new arch-specific binaries.
-- Helm install uses pinned version with SHA-256 checksum verification and
-  `TARGETARCH` mapping (live-script / single-arch issues fixed; tracked by
-  Renovate). Still a network-at-build `curl` with no Cachi2 prefetch — same
-  class as the `oc` client fetch.
+  `oc` — pattern to **follow** for new arch-specific binaries. The `oc` client
+  fetch is a network-at-build `curl` with no Cachi2 prefetch (standalone
+  tarball).
 
 ### Python packaging
 
