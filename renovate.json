@@ -64,7 +64,6 @@
       "description": "Auto-merge container base image digest updates",
       "matchUpdateTypes": ["digest"],
       "matchPackagePatterns": [
-        "^quay.io/konflux-ci/task-runner",
         "^registry.access.redhat.com/ubi9/"
       ],
       "automerge": true,
@@ -88,31 +87,6 @@
       ],
       "automerge": false,
       "autoApprove": false
-    },
-    {
-      "description": "Auto-merge Helm patch updates, manual review for minor/major",
-      "matchPackageNames": ["helm/helm"],
-      "matchUpdateTypes": ["patch"],
-      "automerge": true,
-      "autoApprove": true
-    },
-    {
-      "description": "Manual review for Helm minor/major updates",
-      "matchPackageNames": ["helm/helm"],
-      "matchUpdateTypes": ["minor", "major"],
-      "automerge": false,
-      "autoApprove": false
-    }
-  ],
-  "customManagers": [
-    {
-      "customType": "regex",
-      "description": "Track Helm version in Dockerfile ARG",
-      "fileMatch": ["^Dockerfile$"],
-      "matchStrings": ["ARG HELM_VERSION=v(?<currentValue>\\S+)"],
-      "datasourceTemplate": "github-releases",
-      "depNameTemplate": "helm/helm",
-      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
     }
   ],
   "prConcurrentLimit": 0
