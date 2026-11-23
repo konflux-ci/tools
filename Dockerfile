@@ -40,7 +40,7 @@ RUN /usr/bin/fix-permissions /tmp/src \
     && /usr/bin/update-ca-trust
 RUN yum install -y skopeo jq bc
 ARG TARGETARCH
-ARG HELM_VERSION=v3.21.4
+ARG HELM_VERSION=v3.22.1
 RUN case "${TARGETARCH}" in \
         amd64) HELM_ARCH=amd64 ;; \
         arm64) HELM_ARCH=arm64 ;; \
